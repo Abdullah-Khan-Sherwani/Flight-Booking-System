@@ -10,19 +10,19 @@
 	<head>
 	<meta charset="utf-8">
 	<meta http-equiv="X-UA-Compatible" content="IE=edge">
-	<title>Traveler &mdash; Free Website Template, Free HTML5 Template by FreeHTML5.co</title>
+	<title>IAT Airlines &mdash; Pakistan's Domestic Airline</title>
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<meta name="description" content="Free HTML5 Website Template by FreeHTML5.co" />
-	<meta name="keywords" content="free website templates, free html5, free template, free bootstrap, free website template, html5, css3, mobile first, responsive" />
-	<meta name="author" content="FreeHTML5.co" />
+	<meta name="description" content="IAT Airlines - Domestic flights across Pakistan" />
+	<meta name="keywords" content="flights, pakistan, domestic airlines, karachi, lahore, islamabad, travel" />
+	<meta name="author" content="IAT Airlines" />
 
   	<!-- Facebook and Twitter integration -->
-	<meta property="og:title" content=""/>
+	<meta property="og:title" content="IAT Airlines"/>
 	<meta property="og:image" content=""/>
 	<meta property="og:url" content=""/>
-	<meta property="og:site_name" content=""/>
-	<meta property="og:description" content=""/>
-	<meta name="twitter:title" content="" />
+	<meta property="og:site_name" content="IAT Airlines"/>
+	<meta property="og:description" content="Pakistan's premier domestic airline service"/>
+	<meta name="twitter:title" content="IAT Airlines" />
 	<meta name="twitter:image" content="" />
 	<meta name="twitter:url" content="" />
 	<meta name="twitter:card" content="" />
@@ -76,17 +76,16 @@
 				</div>
 				<div class="col-xs-8 text-right menu-1">
 					<ul>
-						<li><a href="{% url 'destination' %}">Destination</a></li>
+						<li><a href="{% url 'destination' %}">Destinations</a></li>
 						<li class="has-dropdown">
-							<a href="#">Travel</a>
+							<a href="#">Book Travel</a>
 							<ul class="dropdown">
-								<li><a href="#">Europe</a></li>
-								<li><a href="#">Asia</a></li>
-								<li><a href="#">America</a></li>
-								<li><a href="#">Canada</a></li>
+								<li><a href="#">One Way</a></li>
+								<li><a href="#">Round Trip</a></li>
+								<li><a href="#">Multi City</a></li>
 							</ul>
 						</li>
-						<li><a href="{% url 'pricing' %}">Pricing</a></li>
+						<li><a href="{% url 'pricing' %}">Fares</a></li>
 						<li><a href="{% url 'contact' %}">Contact</a></li>
 					</ul>	
 				</div>
@@ -112,47 +111,74 @@
 									
 									<div class="tab-content">
 										<div class="tab-content-inner active" data-content="signup">
-											<h3>Book Your Trip</h3>
-											<form action="#">
+											<h3>Book Your Flight</h3>
+											<form action="{% url 'search_flights' %}" method="post">
+												{% csrf_token %}
 												<div class="row form-group">
 													<div class="col-md-12">
-														<label for="fullname">Your Name</label>
-														<input type="text" id="fullname" class="form-control">
-													</div>
-												</div>
-												<div class="row form-group">
-													<div class="col-md-12">
-														<label for="activities">Activities</label>
-														<select name="#" id="activities" class="form-control">
-															<option value="">Activities</option>
-															<option value="">Hiking</option>
-															<option value="">Caving</option>
-															<option value="">Swimming</option>
+														<label for="departure_city">From</label>
+														<select name="departure_city" id="departure_city" class="form-control" required>
+															<option value="">Select Departure City</option>
+															<option value="KHI">Karachi (KHI)</option>
+															<option value="LHE">Lahore (LHE)</option>
+															<option value="ISB">Islamabad (ISB)</option>
+															<option value="PEW">Peshawar (PEW)</option>
+															<option value="UET">Quetta (UET)</option>
+															<option value="MUX">Multan (MUX)</option>
 														</select>
 													</div>
 												</div>
 												<div class="row form-group">
 													<div class="col-md-12">
-														<label for="destination">Destination</label>
-														<select name="#" id="destination" class="form-control">
-															<option value="">Philippines</option>
-															<option value="">USA</option>
-															<option value="">Australia</option>
-															<option value="">Singapore</option>
+														<label for="arrival_city">To</label>
+														<select name="arrival_city" id="arrival_city" class="form-control" required>
+															<option value="">Select Destination City</option>
+															<option value="KHI">Karachi (KHI)</option>
+															<option value="LHE">Lahore (LHE)</option>
+															<option value="ISB">Islamabad (ISB)</option>
+															<option value="PEW">Peshawar (PEW)</option>
+															<option value="UET">Quetta (UET)</option>
+															<option value="MUX">Multan (MUX)</option>
 														</select>
 													</div>
 												</div>
 												
 												<div class="row form-group">
 													<div class="col-md-12">
-														<label for="date-start">Date Travel</label>
-														<input type="text" id="date-start" class="form-control">
+														<label for="departure_date">Departure Date</label>
+														<input type="text" id="departure_date" name="departure_date" class="form-control date-picker" required>
 													</div>
 												</div>
 
 												<div class="row form-group">
 													<div class="col-md-12">
-														<input type="submit" class="btn btn-primary btn-block" value="Submit">
+														<label for="travel_class">Travel Class</label>
+														<select name="travel_class" id="travel_class" class="form-control" required>
+															<option value="">Select Class</option>
+															<option value="ECO">Economy</option>
+															<option value="BUS">Business</option>
+															<option value="FIR">First Class</option>
+														</select>
+													</div>
+												</div>
+
+												<div class="row form-group">
+													<div class="col-md-12">
+														<label for="passengers">Passengers</label>
+														<select name="passengers" id="passengers" class="form-control" required>
+															<option value="1">1 Passenger</option>
+															<option value="2">2 Passengers</option>
+															<option value="3">3 Passengers</option>
+															<option value="4">4 Passengers</option>
+															<option value="5">5 Passengers</option>
+															<option value="6">6 Passengers</option>
+														</select>
+													</div>
+												</div>
+
+												<div class="row form-group">
+													<div class="col-md-12">
+														<input type="submit" class="btn btn-primary btn-block" value="Search Flights">
 													</div>
 												</div>
 											</form>	
@@ -176,7 +202,7 @@
 			<div class="row">
 				<div class="col-md-8 col-md-offset-2 text-center gtco-heading">
 					<h2>Book Your Favourite Destination</h2>
-					<p>Explore Pakistan’s most popular cities and plan your next flight with ease. Fast, secure, and convenient — book your trip in just a few clicks.</p>
+					<p>Explore Pakistan's most popular cities and plan your next flight with ease. Fast, secure, and convenient — book your trip in just a few clicks.</p>
 				</div>
 			</div>
 			<div class="row">
@@ -323,7 +349,7 @@
 			<div class="row">
 				<div class="col-md-8 col-md-offset-2 text-center gtco-heading animate-box">
 					<h2>Our Success</h2>
-					<p>Dignissimos asperiores vitae velit veniam totam fuga molestias accusamus alias autem provident. Odit ab aliquam dolor eius.</p>
+					<p>Proudly serving domestic travelers across Pakistan with reliable and comfortable air travel experiences.</p>
 				</div>
 			</div>
 
@@ -331,15 +357,15 @@
 				
 				<div class="col-md-3 col-sm-6 animate-box" data-animate-effect="fadeInUp">
 					<div class="feature-center">
-						<span class="counter js-counter" data-from="0" data-to="196" data-speed="5000" data-refresh-interval="50">1</span>
-						<span class="counter-label">Destination</span>
+						<span class="counter js-counter" data-from="0" data-to="6" data-speed="5000" data-refresh-interval="50">1</span>
+						<span class="counter-label">Destinations</span>
 
 					</div>
 				</div>
 				<div class="col-md-3 col-sm-6 animate-box" data-animate-effect="fadeInUp">
 					<div class="feature-center">
-						<span class="counter js-counter" data-from="0" data-to="97" data-speed="5000" data-refresh-interval="50">1</span>
-						<span class="counter-label">Hotels</span>
+						<span class="counter js-counter" data-from="0" data-to="50" data-speed="5000" data-refresh-interval="50">1</span>
+						<span class="counter-label">Daily Flights</span>
 					</div>
 				</div>
 				<div class="col-md-3 col-sm-6 animate-box" data-animate-effect="fadeInUp">
@@ -351,7 +377,7 @@
 				<div class="col-md-3 col-sm-6 animate-box" data-animate-effect="fadeInUp">
 					<div class="feature-center">
 						<span class="counter js-counter" data-from="0" data-to="12202" data-speed="5000" data-refresh-interval="50">1</span>
-						<span class="counter-label">Happy Customer</span>
+						<span class="counter-label">Happy Customers</span>
 
 					</div>
 				</div>
@@ -366,8 +392,8 @@
 		<div class="gtco-container">
 			<div class="row animate-box">
 				<div class="col-md-8 col-md-offset-2 text-center gtco-heading">
-					<h2>Subscribe</h2>
-					<p>Be the first to know about the new templates.</p>
+					<h2>Subscribe to Our Newsletter</h2>
+					<p>Be the first to know about special offers and new routes.</p>
 				</div>
 			</div>
 			<div class="row animate-box">
@@ -430,8 +456,8 @@
 					<div class="gtco-widget">
 						<h3>Get In Touch</h3>
 						<ul class="gtco-quick-contact">
-							<li><a href="#"><i class="icon-phone"></i> +1 234 567 890</a></li>
-							<li><a href="#"><i class="icon-mail2"></i> info@freehtml5.co</a></li>
+							<li><a href="#"><i class="icon-phone"></i> +92 300 1234567</a></li>
+							<li><a href="#"><i class="icon-mail2"></i> info@iatairlines.com</a></li>
 							<li><a href="#"><i class="icon-chat"></i> Live Chat</a></li>
 						</ul>
 					</div>
@@ -442,15 +468,15 @@
 			<div class="row copyright">
 				<div class="col-md-12">
 					<p class="pull-left">
-						<small class="block">&copy; 2016 Free HTML5. All Rights Reserved.</small> 
-						<small class="block">Designed by <a href="https://freehtml5.co/" target="_blank">FreeHTML5.co</a> Demo Images: <a href="http://unsplash.com/" target="_blank">Unsplash</a></small>
+						<small class="block">&copy; 2024 IAT Airlines. All Rights Reserved.</small> 
+						<small class="block">Domestic Airline Management System</small>
 					</p>
 					<p class="pull-right">
 						<ul class="gtco-social-icons pull-right">
 							<li><a href="#"><i class="icon-twitter"></i></a></li>
 							<li><a href="#"><i class="icon-facebook"></i></a></li>
 							<li><a href="#"><i class="icon-linkedin"></i></a></li>
-							<li><a href="#"><i class="icon-dribbble"></i></a></li>
+							<li><a href="#"><i class="icon-instagram"></i></a></li>
 						</ul>
 					</p>
 				</div>
@@ -492,6 +518,28 @@
 
 	<!-- Main -->
 	<script src="{% static 'js/main.js' %}"></script>
+
+	<script>
+		$(document).ready(function(){
+			// Initialize datepicker
+			$('.date-picker').datepicker({
+				format: 'yyyy-mm-dd',
+				startDate: '0d',
+				autoclose: true
+			});
+
+			// Simple validation to prevent same departure and arrival cities
+			$('form').submit(function(e) {
+				var departure = $('#departure_city').val();
+				var arrival = $('#arrival_city').val();
+				
+				if (departure && arrival && departure === arrival) {
+					alert('Departure and arrival cities cannot be the same.');
+					e.preventDefault();
+				}
+			});
+		});
+	</script>
 
 	</body>
 </html>
