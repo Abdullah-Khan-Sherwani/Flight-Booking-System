@@ -1,5 +1,3 @@
-{% load static %}
-
 <!DOCTYPE HTML>
 <!--
 	Traveler by freehtml5.co
@@ -30,32 +28,32 @@
 	<link href="https://fonts.googleapis.com/css?family=Lato:300,400,700" rel="stylesheet">
 	
 	<!-- Animate.css -->
-	<link rel="stylesheet" href="{% static 'css/animate.css' %}">
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/animate.css') }}">
 	<!-- Icomoon Icon Fonts-->
-	<link rel="stylesheet" href="{% static 'css/icomoon.css' %}">
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/icomoon.css') }}">
 	<!-- Themify Icons-->
-	<link rel="stylesheet" href="{% static 'css/themify-icons.css' %}">
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/themify-icons.css') }}">
 	<!-- Bootstrap  -->
-	<link rel="stylesheet" href="{% static 'css/bootstrap.css' %}">
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.css') }}">
 
 	<!-- Magnific Popup -->
-	<link rel="stylesheet" href="{% static 'css/magnific-popup.css' %}">
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/magnific-popup.css') }}">
 
 	<!-- Magnific Popup -->
-	<link rel="stylesheet" href="{% static 'css/bootstrap-datepicker.min.css' %}">
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap-datepicker.min.css') }}">
 
 	<!-- Owl Carousel  -->
-	<link rel="stylesheet" href="{% static 'css/owl.carousel.min.css' %}">
-	<link rel="stylesheet" href="{% static 'css/owl.theme.default.min.css' %}">
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/owl.carousel.min.css') }}">
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/owl.theme.default.min.css') }}">
 
 	<!-- Theme style  -->
-	<link rel="stylesheet" href="{% static 'css/style.css' %}">
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 
 	<!-- Modernizr JS -->
-	<script src="{% static 'js/modernizr-2.6.2.min.js' %}"></script>
+	<script src="{{ url_for('static', filename='js/modernizr-2.6.2.min.js') }}"></script>
 	<!-- FOR IE9 below -->
 	<!--[if lt IE 9]>
-	<script src="{% static 'js/respond.min.js' %}"></script>
+	<script src="{{ url_for('static', filename='js/respond.min.js') }}"></script>
 	<![endif]-->
 
 	</head>
@@ -72,11 +70,11 @@
 			
 			<div class="row">
 				<div class="col-sm-4 col-xs-12">
-					<div id="gtco-logo"><a href="{% url 'index' %}">IAT Airlines <em>.</em></a></div>
+					<div id="gtco-logo"><a href="{{ url_for('home') }}">IAT Airlines <em>.</em></a></div>
 				</div>
 				<div class="col-xs-8 text-right menu-1">
 					<ul>
-						<li><a href="{% url 'destination' %}">Destinations</a></li>
+						<li><a href="{{ url_for('destination') }}">Destinations</a></li>
 						<li class="has-dropdown">
 							<a href="#">Book Travel</a>
 							<ul class="dropdown">
@@ -85,8 +83,8 @@
 								<li><a href="#">Multi City</a></li>
 							</ul>
 						</li>
-						<li><a href="{% url 'pricing' %}">Fares</a></li>
-						<li><a href="{% url 'contact' %}">Contact</a></li>
+						<li><a href="{{ url_for('pricing') }}">Fares</a></li>
+						<li><a href="{{ url_for('contact') }}">Contact</a></li>
 					</ul>	
 				</div>
 			</div>
@@ -94,7 +92,7 @@
 		</div>
 	</nav>
 	
-	<header id="gtco-header" class="gtco-cover gtco-cover-md" role="banner" style="background-image: url({% static 'images/img_bg_2.jpg' %})">
+	<header id="gtco-header" class="gtco-cover gtco-cover-md" role="banner" style="background-image: url({{ url_for('static', filename='images/img_bg_2.jpg') }})">
 		<div class="overlay"></div>
 		<div class="gtco-container">
 			<div class="row">
@@ -112,8 +110,7 @@
 									<div class="tab-content">
 										<div class="tab-content-inner active" data-content="signup">
 											<h3>Book Your Flight</h3>
-											<form action="{% url 'search_flights' %}" method="post">
-												{% csrf_token %}
+											<form action="{{ url_for('search_flights') }}" method="post">
 												<div class="row form-group">
 													<div class="col-md-12">
 														<label for="departure_city">From</label>
@@ -208,10 +205,10 @@
 			<div class="row">
 
 				<div class="col-lg-4 col-md-4 col-sm-6">
-					<a href="{% static 'images/karachi.jpg' %}" class="fh5co-card-item image-popup">
+					<a href="{{ url_for('static', filename='images/karachi.jpg') }}" class="fh5co-card-item image-popup">
 						<figure>
 							<div class="overlay"><i class="ti-plus"></i></div>
-							<img src="{% static 'images/karachi.jpg' %}" alt="Image" class="img-responsive">
+							<img src="{{ url_for('static', filename='images/karachi.jpg') }}" alt="Image" class="img-responsive">
 						</figure>
 						<div class="fh5co-text">
 							<h2>Karachi</h2>
@@ -221,10 +218,10 @@
 					</a>
 				</div>
 				<div class="col-lg-4 col-md-4 col-sm-6">
-					<a href="{% static 'images/lahore.png' %}" class="fh5co-card-item image-popup">
+					<a href="{{ url_for('static', filename='images/lahore.png') }}" class="fh5co-card-item image-popup">
 						<figure>
 							<div class="overlay"><i class="ti-plus"></i></div>
-							<img src="{% static 'images/lahore.png' %}" alt="Image" class="img-responsive">
+							<img src="{{ url_for('static', filename='images/lahore.png') }}" alt="Image" class="img-responsive">
 						</figure>
 						<div class="fh5co-text">
 							<h2>Lahore</h2>
@@ -234,10 +231,10 @@
 					</a>
 				</div>
 				<div class="col-lg-4 col-md-4 col-sm-6">
-					<a href="{% static 'images/Islamabad.jpg' %}" class="fh5co-card-item image-popup">
+					<a href="{{ url_for('static', filename='images/Islamabad.jpg') }}" class="fh5co-card-item image-popup">
 						<figure>
 							<div class="overlay"><i class="ti-plus"></i></div>
-							<img src="{% static 'images/Islamabad.jpg' %}" alt="Image" class="img-responsive">
+							<img src="{{ url_for('static', filename='images/Islamabad.jpg') }}" alt="Image" class="img-responsive">
 						</figure>
 						<div class="fh5co-text">
 							<h2>Islamabad</h2>
@@ -247,10 +244,10 @@
 					</a>
 				</div>
 				<div class="col-lg-4 col-md-4 col-sm-6">
-					<a href="{% static 'images/peshawar.jpg' %}" class="fh5co-card-item image-popup">
+					<a href="{{ url_for('static', filename='images/peshawar.jpg') }}" class="fh5co-card-item image-popup">
 						<figure>
 							<div class="overlay"><i class="ti-plus"></i></div>
-							<img src="{% static 'images/peshawar.jpg' %}" alt="Image" class="img-responsive">
+							<img src="{{ url_for('static', filename='images/peshawar.jpg') }}" alt="Image" class="img-responsive">
 						</figure>
 						<div class="fh5co-text">
 							<h2>Peshawar</h2>
@@ -260,10 +257,10 @@
 					</a>
 				</div>
 				<div class="col-lg-4 col-md-4 col-sm-6">
-					<a href="{% static 'images/quetta.jpg' %}" class="fh5co-card-item image-popup">
+					<a href="{{ url_for('static', filename='images/quetta.jpg') }}" class="fh5co-card-item image-popup">
 						<figure>
 							<div class="overlay"><i class="ti-plus"></i></div>
-							<img src="{% static 'images/quetta.jpg' %}" alt="Image" class="img-responsive">
+							<img src="{{ url_for('static', filename='images/quetta.jpg') }}" alt="Image" class="img-responsive">
 						</figure>
 						<div class="fh5co-text">
 							<h2>Quetta</h2>
@@ -273,10 +270,10 @@
 					</a>
 				</div>
 				<div class="col-lg-4 col-md-4 col-sm-6">
-					<a href="{% static 'images/multan.jpg' %}" class="fh5co-card-item image-popup">
+					<a href="{{ url_for('static', filename='images/multan.jpg') }}" class="fh5co-card-item image-popup">
 						<figure>
 							<div class="overlay"><i class="ti-plus"></i></div>
-							<img src="{% static 'images/multan.jpg' %}" alt="Image" class="img-responsive">
+							<img src="{{ url_for('static', filename='images/multan.jpg') }}" alt="Image" class="img-responsive">
 						</figure>
 						<div class="fh5co-text">
 							<h2>Multan</h2>
@@ -332,7 +329,7 @@
 	</div>
 
 
-	<div class="gtco-cover gtco-cover-sm" style="background-image: url({% static 'images/img_bg_1.jpg' %})"  data-stellar-background-ratio="0.5">
+	<div class="gtco-cover gtco-cover-sm" style="background-image: url({{ url_for('static', filename='images/img_bg_1.jpg') }})"  data-stellar-background-ratio="0.5">
 		<div class="overlay"></div>
 		<div class="gtco-container text-center">
 			<div class="display-t">
@@ -493,31 +490,31 @@
 	</div>
 	
 	<!-- jQuery -->
-	<script src="{% static 'js/jquery.min.js' %}"></script>
+	<script src="{{ url_for('static', filename='js/jquery.min.js') }}"></script>
 	<!-- jQuery Easing -->
-	<script src="{% static 'js/jquery.easing.1.3.js' %}"></script>
+	<script src="{{ url_for('static', filename='js/jquery.easing.1.3.js') }}"></script>
 	<!-- Bootstrap -->
-	<script src="{% static 'js/bootstrap.min.js' %}"></script>
+	<script src="{{ url_for('static', filename='js/bootstrap.min.js') }}"></script>
 	<!-- Waypoints -->
-	<script src="{% static 'js/jquery.waypoints.min.js' %}"></script>
+	<script src="{{ url_for('static', filename='js/jquery.waypoints.min.js') }}"></script>
 	<!-- Carousel -->
-	<script src="{% static 'js/owl.carousel.min.js' %}"></script>
+	<script src="{{ url_for('static', filename='js/owl.carousel.min.js') }}"></script>
 	<!-- countTo -->
-	<script src="{% static 'js/jquery.countTo.js' %}"></script>
+	<script src="{{ url_for('static', filename='js/jquery.countTo.js') }}"></script>
 
 	<!-- Stellar Parallax -->
-	<script src="{% static 'js/jquery.stellar.min.js' %}"></script>
+	<script src="{{ url_for('static', filename='js/jquery.stellar.min.js') }}"></script>
 
 	<!-- Magnific Popup -->
-	<script src="{% static 'js/jquery.magnific-popup.min.js' %}"></script>
-	<script src="{% static 'js/magnific-popup-options.js' %}"></script>
+	<script src="{{ url_for('static', filename='js/jquery.magnific-popup.min.js') }}"></script>
+	<script src="{{ url_for('static', filename='js/magnific-popup-options.js') }}"></script>
 	
 	<!-- Datepicker -->
-	<script src="{% static 'js/bootstrap-datepicker.min.js' %}"></script>
+	<script src="{{ url_for('static', filename='js/bootstrap-datepicker.min.js') }}"></script>
 	
 
 	<!-- Main -->
-	<script src="{% static 'js/main.js' %}"></script>
+	<script src="{{ url_for('static', filename='js/main.js') }}"></script>
 
 	<script>
 		$(document).ready(function(){
