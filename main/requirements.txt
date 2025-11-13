@@ -1,2 +1,4 @@
 flask
 cx_Oracle
+Django
+oracledb

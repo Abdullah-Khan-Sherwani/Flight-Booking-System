@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'main',
+    'django_extensions',
 ]
 
 MIDDLEWARE = [
@@ -76,8 +77,8 @@ WSGI_APPLICATION = 'myproject.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.oracle',
-        'NAME': 'localhost:1521/ORCLPDB',
-        'USER': 'flight_admin',
+        'NAME': 'localhost:1521/XEPDB1',
+        'USER': 'flight_app_user',
         'PASSWORD': 'flight123',
     }
 }
