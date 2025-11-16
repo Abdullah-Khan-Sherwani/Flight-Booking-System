@@ -87,21 +87,28 @@ def seed():
     )
 
     print("Inserting seats...")
-    seats = [
-        ("1A",  "BUS", "PK301"),
-        ("1B",  "BUS", "PK301"),
-        ("22C", "ECO", "PK301"),
-        ("22D", "ECO", "PK301"),
 
-        ("1A2",  "BUS", "PK302"),
-        ("22C2", "ECO", "PK302"),
+    # dynamic full seat map generator
+    rows = range(1, 31)       # rows 1–30
+    letters = ["A", "B", "C", "D", "E", "F"]
 
-        ("1A3",  "BUS", "PK101"),
-        ("22C3", "ECO", "PK101"),
+    seats = []
+    for flight_id, source, dest, dep, arr, airplane in flights:
+        for row in rows:
+            for letter in letters:
+                # Make seat_id globally unique by prefixing with flight_id
+                # e.g. PK301-12A
+                seat_code = f"{row}{letter}"
+                seat_id = f"{flight_id}-{seat_code}"
+                # class rules
+                if row <= 3:
+                    travel_class_id = "BUS"
+                elif row <= 5:
+                    travel_class_id = "FIR"
+                else:
+                    travel_class_id = "ECO"
+                seats.append((seat_id, travel_class_id, flight_id))
 
-        ("1A4",  "BUS", "PK102"),
-        ("22C4", "ECO", "PK102"),
-    ]
     cur.executemany(
         """
         INSERT INTO main_seatdetails
@@ -131,8 +138,8 @@ def seed():
     print("Inserting reservations...")
     today = date.today()
     reservations = [
-        ("R001", "P001", "1A",  today),
-        ("R002", "P002", "22C", today),
+        ("R001", "P001", "PK301-1A",  today),
+        ("R002", "P002", "PK301-22C", today),
     ]
     cur.executemany(
         """
@@ -193,10 +200,10 @@ def seed():
     print("Inserting flight costs...")
     flight_costs = [
         # seat_id, valid_from_date, valid_to_date, cost
-        ("1A",  today, today + timedelta(days=30), 65000),
-        ("22C", today, today + timedelta(days=30), 40000),
-        ("1B",  today, today + timedelta(days=30), 63000),
-        ("22D", today, today + timedelta(days=30), 38000),
+        ("PK301-1A",  today, today + timedelta(days=30), 65000),
+        ("PK301-22C", today, today + timedelta(days=30), 40000),
+        ("PK301-1B",  today, today + timedelta(days=30), 63000),
+        ("PK301-22D", today, today + timedelta(days=30), 38000),
     ]
     cur.executemany(
         """

@@ -4,6 +4,86 @@
     <meta charset="utf-8">
     <title>Book Flight - IAT Airlines</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .seat-map-container {
+            width: 100%;
+            overflow-x: auto;
+            padding: 20px;
+            background: #ffffff;
+            border-radius: 10px;
+            border: 1px solid #ddd;
+            margin-bottom: 20px;
+        }
+        .seat-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            padding: 5px 0;
+        }
+        .row-number {
+            width: 40px;
+            text-align: center;
+            font-weight: bold;
+            margin-right: 15px;
+        }
+        .seats-group {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .seat {
+            width: 40px;
+            height: 40px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            cursor: pointer;
+            border: 2px solid #ccc;
+            background: #e9ecef;
+            transition: 0.2s;
+            font-size: 14px;
+        }
+        .seat.free {
+            background: #007bff;
+            color: #fff;
+            border-color: #007bff;
+        }
+
+        .seat.booked {
+            background: #dc3545;
+            border-color: #dc3545;
+            color: #fff;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+        .seat.selected {
+            background: #0056b3 !important;
+            border-color: #003f88 !important;
+            color: #fff !important;
+            box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.4);
+        }
+        .aisle-gap {
+            width: 60px;
+            text-align: center;
+            color: #666;
+            font-size: 12px;
+        }
+        .legend-box {
+            width: 18px;
+            height: 18px;
+            display: inline-block;
+            margin-right: 6px;
+            border-radius: 3px;
+        }
+        .legend-box.available-box {
+            background: #007bff;
+        }
+        .legend-box.booked-box {
+            background: #dc3545;
+        }
+    </style>
 </head>
 <body>
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
@@ -14,6 +94,11 @@
 
 <div class="container mt-4">
     <h2>Book Flight</h2>
+    {% if error_message %}
+        <div class="alert alert-danger">
+            {{ error_message }}
+        </div>
+    {% endif %}
 
     {% if flight %}
         <div class="card mb-3">
@@ -28,64 +113,83 @@
     {% endif %}
 
     <form method="post">
+        <input type="hidden" name="passengers" value="{{ passengers }}">
+
         <h4>Passenger Details</h4>
-        <div class="row">
-            <div class="col-md-6 mb-3">
-                <label class="form-label">First Name</label>
-                <input name="first_name" class="form-control" required>
-            </div>
-            <div class="col-md-6 mb-3">
-                <label class="form-label">Last Name</label>
-                <input name="last_name" class="form-control" required>
-            </div>
-        </div>
+        {% set p = passengers|int %}
+        {% for i in range(1, p + 1) %}
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="card-title">Passenger {{ i }}</h5>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">First Name</label>
+                        <input name="first_name_{{ i }}" class="form-control" required>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Last Name</label>
+                        <input name="last_name_{{ i }}" class="form-control" required>
+                    </div>
+                </div>
 
-        <div class="row">
-            <div class="col-md-6 mb-3">
-                <label class="form-label">Email</label>
-                <input name="email" type="email" class="form-control" required>
-            </div>
-            <div class="col-md-6 mb-3">
-                <label class="form-label">Phone Number</label>
-                <input name="phone_number" class="form-control" required>
-            </div>
-        </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Email</label>
+                        <input name="email_{{ i }}" type="email" class="form-control" required>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Phone Number</label>
+                        <input name="phone_number_{{ i }}" class="form-control" required>
+                    </div>
+                </div>
 
-        <h4>Address</h4>
-        <div class="mb-3">
-            <label class="form-label">Address</label>
-            <input name="address" class="form-control" required>
-        </div>
-        <div class="row">
-            <div class="col-md-4 mb-3">
-                <label class="form-label">City</label>
-                <input name="city" class="form-control" required>
+                <h6 class="mt-3">Address</h6>
+                <div class="mb-3">
+                    <label class="form-label">Address</label>
+                    <input name="address_{{ i }}" class="form-control" required>
+                </div>
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">City</label>
+                        <input name="city_{{ i }}" class="form-control" required>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">State</label>
+                        <input name="state_{{ i }}" class="form-control" required>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">Zip Code</label>
+                        <input name="zipcode_{{ i }}" class="form-control" required>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Country</label>
+                    <input name="country_{{ i }}" class="form-control" required>
+                </div>
             </div>
-            <div class="col-md-4 mb-3">
-                <label class="form-label">State</label>
-                <input name="state" class="form-control" required>
-            </div>
-            <div class="col-md-4 mb-3">
-                <label class="form-label">Zip Code</label>
-                <input name="zipcode" class="form-control" required>
-            </div>
         </div>
-        <div class="mb-3">
-            <label class="form-label">Country</label>
-            <input name="country" class="form-control" required>
-        </div>
+        {% endfor %}
 
         <h4>Select Seat</h4>
         <div class="mb-3">
-            <label class="form-label">Available Seats</label>
-            <select name="seat_id" class="form-select" required>
-                <option value="">Select a seat</option>
-                {% for seat in seats %}
-                    <option value="{{ seat[0] }}">
-                        {{ seat[0] }} - {{ seat[1] }} (Rs {{ seat[2] or 0 }})
-                    </option>
-                {% endfor %}
-            </select>
+            <div class="mb-2">
+                <strong>Legend:</strong>
+                <span class="legend-box available-box"></span>Free
+                <span class="legend-box booked-box ms-3"></span>Booked
+            </div>
+            <!-- Hidden input that will be set by the seat map JavaScript (comma-separated list) -->
+            <input type="hidden" name="seat_ids" id="seat_ids_input" required>
+            <div class="seat-map-container">
+                <div id="seat-map"></div>
+            </div>
+            <p class="mt-2">
+                <strong>Selected Seat(s):</strong>
+                <span id="selected-seat">None</span>
+            </p>
+            <p class="mt-1">
+                <strong>Estimated Total Price:</strong>
+                Rs <span id="total-price">0</span>
+            </p>
         </div>
 
         <button type="submit" class="btn btn-success">Confirm Booking</button>
@@ -98,5 +202,180 @@
         <p>&copy; 2024 IAT Airlines. All Rights Reserved.</p>
     </div>
 </footer>
+<script>
+    // Build a seat map from the seats passed from the backend.
+    // Each seat is (seat_id, class_name, cost, is_booked).
+    const seatsFromServer = [
+    {% for seat in seats %}
+        {
+            id: "{{ seat[0] }}",          // e.g. PK301-8F
+            className: "{{ seat[1] }}",
+            cost: {{ seat[2] or 0 }},
+            booked: {{ 1 if seat[3] else 0 }}
+        }{% if not loop.last %},{% endif %}
+    {% endfor %}
+];
+    const maxPassengers = parseInt("{{ passengers }}", 10) || 1;
+
+    const seatCostMap = {};
+    seatsFromServer.forEach(s => {
+        seatCostMap[s.id] = s.cost || 0;
+    });
+
+    document.addEventListener('DOMContentLoaded', function () {
+        const seatMapContainer = document.getElementById('seat-map');
+        const selectedSeatSpan = document.getElementById('selected-seat');
+        const seatIdsInput = document.getElementById('seat_ids_input');
+        const bookingForm = document.querySelector('form');
+        const totalPriceSpan = document.getElementById('total-price');
+
+        let selectedSeatIds = [];
+
+        // Group seats by row number.
+        // seat.id is like "PK301-10A" → use the last part "10A" for row/letter.
+        const rows = {};
+        seatsFromServer.forEach(seat => {
+            const id = seat.id;
+            if (!id) return;
+
+            const code = id.split('-').pop(); // "10A"
+            const rowNum = parseInt(code, 10);
+            if (isNaN(rowNum)) return;
+
+            const letter = code.replace(rowNum.toString(), '');
+            if (!rows[rowNum]) {
+                rows[rowNum] = { left: [], right: [] };
+            }
+
+            const seatWithLetter = {
+                ...seat,
+                code: code,
+                letter: letter
+            };
+
+            if (['A', 'B', 'C'].includes(letter)) {
+                rows[rowNum].left.push(seatWithLetter);
+            } else {
+                rows[rowNum].right.push(seatWithLetter);
+            }
+        });
+
+        // Helper to create a seat element
+        function createSeatElement(seat) {
+            const div = document.createElement('div');
+            div.classList.add('seat');
+            div.textContent = seat.letter;
+            div.dataset.seatId = seat.id;
+
+            const displayCode = seat.code || seat.id;
+
+            if (seat.booked) {
+                // 🔴 Booked seat: red, not clickable
+                div.classList.add('booked');
+                div.title = displayCode + ' - BOOKED';
+            } else {
+                // 🔵 Free seat: blue, clickable, up to maxPassengers seats
+                div.classList.add('free');
+                div.title = displayCode + ' - ' + seat.className + ' (Rs ' + seat.cost + ')';
+
+                div.onclick = function () {
+                    const idx = selectedSeatIds.indexOf(seat.id);
+
+                    if (idx !== -1) {
+                        // Deselect this seat
+                        selectedSeatIds.splice(idx, 1);
+                        div.classList.remove('selected');
+                    } else {
+                        // Select new seat if under limit
+                        if (selectedSeatIds.length >= maxPassengers) {
+                            alert("You can only select up to " + maxPassengers + " seat(s).");
+                            return;
+                        }
+                        selectedSeatIds.push(seat.id);
+                        div.classList.add('selected');
+                    }
+
+                    // Update hidden input and label
+                    seatIdsInput.value = selectedSeatIds.join(",");
+                    if (selectedSeatIds.length === 0) {
+                        selectedSeatSpan.textContent = "None";
+                    } else {
+                        const displayList = selectedSeatIds
+                            .map(id => {
+                                const code = id.split("-").pop();
+                                return code;
+                            })
+                            .join(", ");
+                        selectedSeatSpan.textContent = displayList;
+                    }
+                    // Update total price
+                    const total = selectedSeatIds.reduce((sum, id) => {
+                        return sum + (seatCostMap[id] || 0);
+                    }, 0);
+                    totalPriceSpan.textContent = total;
+                };
+            }
+
+            return div;
+        }
+
+        // Render rows in numeric order
+        Object.keys(rows)
+            .map(n => parseInt(n, 10))
+            .sort((a, b) => a - b)
+            .forEach(rowNum => {
+                const row = rows[rowNum];
+
+                const rowDiv = document.createElement('div');
+                rowDiv.className = 'seat-row';
+
+                const rowNumber = document.createElement('div');
+                rowNumber.className = 'row-number';
+                rowNumber.textContent = rowNum;
+                rowDiv.appendChild(rowNumber);
+
+                const leftGroup = document.createElement('div');
+                leftGroup.className = 'seats-group';
+                row.left
+                    .sort((a, b) => a.letter.localeCompare(b.letter))
+                    .forEach(seat => {
+                        leftGroup.appendChild(createSeatElement(seat));
+                    });
+                rowDiv.appendChild(leftGroup);
+
+                const aisleGap = document.createElement('div');
+                aisleGap.className = 'aisle-gap';
+                aisleGap.textContent = 'AISLE';
+                rowDiv.appendChild(aisleGap);
+
+                const rightGroup = document.createElement('div');
+                rightGroup.className = 'seats-group';
+                row.right
+                    .sort((a, b) => a.letter.localeCompare(b.letter))
+                    .forEach(seat => {
+                        rightGroup.appendChild(createSeatElement(seat));
+                    });
+                rowDiv.appendChild(rightGroup);
+
+                seatMapContainer.appendChild(rowDiv);
+            });
+
+        // Prevent submitting if not enough seats selected for the number of passengers
+        bookingForm.addEventListener('submit', function (e) {
+            if (selectedSeatIds.length !== maxPassengers) {
+                e.preventDefault();
+                alert(
+                    "You have selected " +
+                    selectedSeatIds.length +
+                    " seat(s) for " +
+                    maxPassengers +
+                    " passenger(s). Please select exactly " +
+                    maxPassengers +
+                    " seat(s) to continue."
+                );
+            }
+        });
+    });
+</script>
 </body>
 </html>
