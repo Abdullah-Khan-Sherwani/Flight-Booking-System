@@ -15,10 +15,30 @@ def search_flights():
     cursor = conn.cursor()
 
     query = """
-        SELECT flight_id, source_airport_id, destination_airport_id,
-               departure_date_time, arrival_date_time, airplane_type
-        FROM main_flightdetails
-        WHERE source_airport_id = :1 AND destination_airport_id = :2
+        SELECT 
+            f.flight_id,
+            f.source_airport_id,
+            f.destination_airport_id,
+            TO_CHAR(f.departure_date_time, 'YYYY-MM-DD HH24:MI'),
+            TO_CHAR(f.arrival_date_time, 'YYYY-MM-DD HH24:MI'),
+            f.airplane_type,
+            MIN(fc.cost) AS lowest_price,
+            tc.name AS travel_class
+        FROM main_flightdetails f
+        JOIN main_seatdetails s ON s.flight_id = f.flight_id
+        JOIN main_travelclass tc ON tc.travel_class_id = s.travel_class_id
+        JOIN main_flightcost fc ON fc.seat_id = s.seat_id
+        WHERE f.source_airport_id = :1 
+          AND f.destination_airport_id = :2
+        GROUP BY 
+            f.flight_id,
+            f.source_airport_id,
+            f.destination_airport_id,
+            f.departure_date_time,
+            f.arrival_date_time,
+            f.airplane_type,
+            tc.name
+        ORDER BY lowest_price
     """
 
     cursor.execute(query, [source, destination])
@@ -29,12 +49,16 @@ def search_flights():
             "flight_id": row[0],
             "source": row[1],
             "destination": row[2],
-            "departure": str(row[3]),
-            "arrival": str(row[4]),
-            "airplane_type": row[5]
+            "departure": row[3],
+            "arrival": row[4],
+            "airplane_type": row[5],
+            "lowest_price": row[6],
+            "travel_class": row[7]
         })
 
     cursor.close()
     conn.close()
 
     return jsonify(flights)
+
+# http://127.0.0.1:5000/flights/search?source=KHI&destination=DXB

@@ -47,18 +47,24 @@
                         <h5>Flight {{ flight[0] }}</h5>  <!-- Flight_ID -->
                         <p class="mb-1">
                             <strong>Departure:</strong> 
-                            {{ flight[6] }} at {{ flight[3] }}  <!-- Source_City and Departure_Date_Time -->
+                            {{ flight[1] }} at {{ flight[3] }}  <!-- Source_City and Departure_Date_Time -->
                         </p>
                         <p class="mb-1">
                             <strong>Arrival:</strong> 
-                            {{ flight[7] }} at {{ flight[4] }}  <!-- Dest_City and Arrival_Date_Time -->
+                            {{ flight[2] }} at {{ flight[4] }}  <!-- Dest_City and Arrival_Date_Time -->
                         </p>
                         <p class="mb-0">
                             <strong>Aircraft:</strong> {{ flight[5] }}  <!-- Airplane_Type -->
                         </p>
+                        <p class="mb-0">
+                            <strong>Class:</strong> {{ flight[7] }}  <!-- Travel Class -->
+                        </p>
+                        <p class="mb-0">
+                            <strong>Lowest Price:</strong> Rs {{ flight[6] }}  <!-- Lowest Price -->
+                        </p>
                     </div>
                     <div class="col-md-4 text-end">
-                        <a href="#" class="btn btn-primary btn-lg">
+                        <a href="{{ url_for('book_flight', flight_id=flight[0]) }}" class="btn btn-primary btn-lg">
                             Select Flight
                         </a>
                     </div>
