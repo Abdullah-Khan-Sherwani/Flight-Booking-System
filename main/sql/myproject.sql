@@ -41,12 +41,19 @@ CREATE TABLE Travel_Class (
     Travel_Class_Capacity NUMBER
 );
 
--- 5. Seat_Details
+-- 5. Seat_Details (Updated for row and position)
 CREATE TABLE Seat_Details (
-    Seat_ID VARCHAR2(10) PRIMARY KEY,
+    Seat_ID VARCHAR2(20) PRIMARY KEY,
     Travel_Class_ID VARCHAR2(10) REFERENCES Travel_Class(Travel_Class_ID),
-    Flight_ID VARCHAR2(10) REFERENCES Flight_Details(Flight_ID)
+    Flight_ID VARCHAR2(10) REFERENCES Flight_Details(Flight_ID),
+    Row_Number NUMBER,           -- Row in the airplane (1..30)
+    Seat_Letter CHAR(1)         -- Seat letter (A, B, C, D, E, F)
 );
+
+-- Optional: unique constraint to avoid duplicate seat in same flight
+ALTER TABLE Seat_Details
+ADD CONSTRAINT UQ_Flight_Row_Seat UNIQUE (Flight_ID, Row_Number, Seat_Letter);
+
 
 -- 6. Reservation
 CREATE TABLE Reservation (

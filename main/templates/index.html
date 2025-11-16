@@ -49,6 +49,45 @@
 	<!-- Theme style  -->
 	<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 
+	<!-- ADD THIS CUSTOM CSS -->
+	<style>
+		/* Custom styles to adjust the booking form position */
+		.row-mt-15em {
+			margin-top: 10em !important; /* Increased from 9em to 10em */
+		}
+		
+		.form-wrap {
+			margin-top: 0px; /* Changed from -20px to 0px */
+		}
+		
+		/* Make form elements more compact */
+		.form-group {
+			margin-bottom: 12px !important; /* Reduced spacing between form elements */
+		}
+		
+		.form-control {
+			padding: 8px 12px !important; /* Slightly smaller padding */
+			height: 42px !important; /* Consistent height */
+		}
+		
+		/* Adjust label spacing */
+		label {
+			margin-bottom: 5px !important;
+			font-size: 14px !important;
+		}
+		
+		/* Make the form container more compact */
+		.tab-content {
+			padding: 15px !important;
+		}
+		
+		/* Adjust the heading spacing */
+		.tab-content h3 {
+			margin-top: 0 !important;
+			margin-bottom: 20px !important;
+		}
+	</style>
+
 	<!-- Modernizr JS -->
 	<script src="{{ url_for('static', filename='js/modernizr-2.6.2.min.js') }}"></script>
 	<!-- FOR IE9 below -->
@@ -101,20 +140,19 @@
 
 					<div class="row row-mt-15em">
 						<div class="col-md-7 mt-text animate-box" data-animate-effect="fadeInUp">
-							<h1>Aap ky ghar tak</h1>	
+							<h1>AAP KY GHAR TAK</h1>	
 						</div>
 						<div class="col-md-4 col-md-push-1 animate-box" data-animate-effect="fadeInRight">
-							<div class="form-wrap">
+							<div class="form-wrap" style="margin-top: -30px;">
 								<div class="tab">
-									
 									<div class="tab-content">
 										<div class="tab-content-inner active" data-content="signup">
-											<h3>Book Your Flight</h3>
+											<h3 style="margin-bottom: 15px;">Book Your Flight</h3>
 											<form action="{{ url_for('search_flights') }}" method="post">
-												<div class="row form-group">
+												<div class="row form-group" style="margin-bottom: 10px;">
 													<div class="col-md-12">
-														<label for="departure_city">From</label>
-														<select name="departure_city" id="departure_city" class="form-control" required>
+														<label for="departure_city" style="margin-bottom: 3px;">From</label>
+														<select name="departure_city" id="departure_city" class="form-control" required style="padding: 6px 10px; height: 38px;">
 															<option value="">Select Departure City</option>
 															<option value="KHI">Karachi (KHI)</option>
 															<option value="LHE">Lahore (LHE)</option>
@@ -122,14 +160,13 @@
 															<option value="PEW">Peshawar (PEW)</option>
 															<option value="UET">Quetta (UET)</option>
 															<option value="MUX">Multan (MUX)</option>
-															<option value="DXB">Dubai (DXB)</option>
 														</select>
 													</div>
 												</div>
-												<div class="row form-group">
+												<div class="row form-group" style="margin-bottom: 10px;">
 													<div class="col-md-12">
-														<label for="arrival_city">To</label>
-														<select name="arrival_city" id="arrival_city" class="form-control" required>
+														<label for="arrival_city" style="margin-bottom: 3px;">To</label>
+														<select name="arrival_city" id="arrival_city" class="form-control" required style="padding: 6px 10px; height: 38px;">
 															<option value="">Select Destination City</option>
 															<option value="KHI">Karachi (KHI)</option>
 															<option value="LHE">Lahore (LHE)</option>
@@ -137,22 +174,32 @@
 															<option value="PEW">Peshawar (PEW)</option>
 															<option value="UET">Quetta (UET)</option>
 															<option value="MUX">Multan (MUX)</option>
-															<option value="DXB">Dubai (DXB)</option>
 														</select>
 													</div>
 												</div>
 												
-												<div class="row form-group">
+												<div class="row form-group" style="margin-bottom: 10px;">
 													<div class="col-md-12">
-														<label for="departure_date">Departure Date</label>
-														<input type="text" id="departure_date" name="departure_date" class="form-control date-picker" required>
+														<label for="departure_date" style="margin-bottom: 3px;">Departure Date</label>
+														<input type="text" id="departure_date" name="departure_date" class="form-control date-picker" required style="padding: 6px 10px; height: 38px;">
 													</div>
 												</div>
 
-												<div class="row form-group">
+												<!-- Trip Type Selection -->
+												<div class="row form-group" style="margin-bottom: 10px;">
 													<div class="col-md-12">
-														<label for="travel_class">Travel Class</label>
-														<select name="travel_class" id="travel_class" class="form-control" required>
+														<label for="trip_type" style="margin-bottom: 3px;">Trip Type</label>
+														<select name="trip_type" id="trip_type" class="form-control" required style="padding: 6px 10px; height: 38px;">
+															<option value="one_way">One Way</option>
+															<option value="round_trip">Round Trip</option>
+														</select>
+													</div>
+												</div>
+
+												<div class="row form-group" style="margin-bottom: 10px;">
+													<div class="col-md-12">
+														<label for="travel_class" style="margin-bottom: 3px;">Travel Class</label>
+														<select name="travel_class" id="travel_class" class="form-control" required style="padding: 6px 10px; height: 38px;">
 															<option value="">Select Class</option>
 															<option value="ECO">Economy</option>
 															<option value="BUS">Business</option>
@@ -161,10 +208,10 @@
 													</div>
 												</div>
 
-												<div class="row form-group">
+												<div class="row form-group" style="margin-bottom: 10px;">
 													<div class="col-md-12">
-														<label for="passengers">Passengers</label>
-														<select name="passengers" id="passengers" class="form-control" required>
+														<label for="passengers" style="margin-bottom: 3px;">Passengers</label>
+														<select name="passengers" id="passengers" class="form-control" required style="padding: 6px 10px; height: 38px;">
 															<option value="1">1 Passenger</option>
 															<option value="2">2 Passengers</option>
 															<option value="3">3 Passengers</option>
@@ -175,15 +222,13 @@
 													</div>
 												</div>
 
-												<div class="row form-group">
+												<div class="row form-group" style="margin-bottom: 0;">
 													<div class="col-md-12">
-														<input type="submit" class="btn btn-primary btn-block" value="Search Flights">
+														<input type="submit" class="btn btn-primary btn-block" value="Search Flights" style="padding: 10px; margin-top: 5px;">
 													</div>
 												</div>
 											</form>	
 										</div>
-
-										
 									</div>
 								</div>
 							</div>
