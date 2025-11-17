@@ -1,0 +1,83 @@
+CS 341 Database Systems
+Fall 2025 page. 1 Abeera Tariq/Maria Rahim
+Course Project
+Project Overview
+In this course project, you will embark on a journey to design and implement an Online Transaction Processing
+(OLTP) system for a practical business scenario. Your task is to create an end-to-end application, complete with a
+relational database, that allows users to interact with and manipulate data according to the business rules. You
+will demonstrate your understanding of CRUD (Create, Read, Update, Delete) operations, as well as the use of
+stored procedures and triggers in your application. This project accounts for 20% of your final course grade.
+Project Requirements
+1. Business Scenario and Rules
+• Identify and select a real-world domain of your choice.
+• Before defining the scenario, you are required to approach at least one real-world user and
+conduct a short conversation/interview to understand how processes operate in practice.
+• Analyse the existing applications or systems in the chosen domain (minimum 2–3 applications)
+to analyze their features, strengths, and limitations.
+• Based on both the interview(s) and analysis, provide a concise description of the chosen
+business scenario, outlining the industry, purpose, and significance of the system.
+2. Data Modeling
+• Identify at least 6-8 entities relevant to your business scenario.
+• Define the attributes and relationships for each entity, including participation and cardinality
+constraints. Present your Entity-Relationship (ER) model in either Chen's or Crow's Foot
+notation.
+3. Relational Database Schema
+• Create a relational schema for your database (normalized up to 3NF), representing the structure
+of tables and their relationships.
+• Provide the Data Definition Language (DDL) script to create the database tables, including any
+constraints.
+• Explain any triggers, stored procedures, or views created as part of your database design.
+4. Application Development
+• Choose an appropriate application development framework (e.g., React.js, Android, Flutter,
+etc.).
+• Understand the connectivity requirements for the chosen framework with Oracle database. If
+the team wishes to use any other database system besides Oracle, the team will require
+approval from the instructor via email. Note: The database must be relational (SQL).
+• Create a flow diagram that illustrates how users will navigate through your application.
+• Include wireframes or sketches of your application's user interface.
+5. SQL Queries and Functionality
+• Document page-by-page navigation within your application.
+• Describe all SQL queries used in your code, their purpose, and include code snippets or
+screenshots of these queries in your report.
+CS 341 Database Systems
+Fall 2025 page. 2 Abeera Tariq/Maria Rahim
+Team Formation Rules
+• Maximum 3 members are allowed. In the case of groups with greater than 3 members, all members will
+receive a zer
+• You may form groups with students from other section with the same instructor.
+• All work must be equally divided between all members as there are marks for individual contribution.
+Submission Requirements
+Submit the following components:
+1. SQL script to create your database.
+2. All code files required to run your application, saved as a single ZIP file.
+3. A comprehensive report document.
+4. A 2–3-minute video demonstrating the user flow of your application.
+Submission Deadline: 7
+th December, 2025 (no extensions possible)
+Presentations: Last week of classes
+Report Format
+1. Title Page
+• Course name, Project title, Team Member Names, and ERPs.
+2. Business Scenario
+• Description of the chosen business scenario.
+• Summary of interview(s) and application analysis
+3. Business Rules
+• Explanation of the core business rules and use cases.
+4. Entities, Attributes, and Relationships
+• Detailed description of entities, attributes, and relationships including multiplicity constraints.
+• ER diagram (neatly hand-drawn or using any software or online tool – in Crow’s foot or Chen’s).
+5. Relational Schema
+• A visual representation of your database schema (using DBDesigner)
+• Show and validate normalization steps up to 3rd Normal Form (3NF)
+• DDL script screenshots or text snippets
+i. Explain the constraints applied to your tables.
+ii. Explain any triggers, stored procedures, and views that you have created.
+iii. Show the insertion of some data that you add to test your application.
+6. Application Flow
+• Flow diagram showing how users interact with your application.
+• Wireframes or sketches of your application's UI.
+7. Page-by-Page Navigation and SQL Queries
+• Detailed documentation of each screen in your application and the corresponding SQL queries.
+Explain the purpose of each SQL query and how it contributes to functionality of your application.
+8. Work Contribution
+• Clear explanation of how tasks were divided among team members.
