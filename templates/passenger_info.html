@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Passenger Information - IAT Airlines</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: #f5f5f5;
+        }
+        .passenger-form-container {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .passenger-section {
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            padding: 25px;
+            margin-bottom: 25px;
+            background: #f8f9fa;
+        }
+        .passenger-header {
+            background: #007bff;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin: -25px -25px 20px -25px;
+        }
+        .form-label {
+            font-weight: 600;
+            color: #495057;
+        }
+        .flight-summary {
+            background: #e7f3ff;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 25px;
+            border-left: 4px solid #007bff;
+        }
+    </style>
+</head>
+<body>
+
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container">
+        <a class="navbar-brand" href="{{ url_for('home') }}">IAT Airlines</a>
+    </div>
+</nav>
+
+<div class="container mt-4">
+    <h2>Passenger Information</h2>
+    
+    <!-- Flight Summary -->
+    <div class="flight-summary">
+        <h5>Flight Details</h5>
+        <div class="row">
+            <div class="col-md-6">
+                <strong>Outbound:</strong> {{ outbound_flight[2] }} to {{ outbound_flight[3] }}<br>
+                <strong>Departure:</strong> {{ outbound_flight[4] }}<br>
+                <strong>Selected Seats:</strong> {{ selected_outbound_seats|join(', ') }}
+            </div>
+            {% if return_flight %}
+            <div class="col-md-6">
+                <strong>Return:</strong> {{ return_flight[2] }} to {{ return_flight[3] }}<br>
+                <strong>Departure:</strong> {{ return_flight[4] }}<br>
+                <strong>Selected Seats:</strong> {{ selected_return_seats|join(', ') }}
+            </div>
+            {% endif %}
+        </div>
+        <div class="row mt-2">
+            <div class="col-12">
+                <strong>Travel Class:</strong> 
+                {% if travel_class == 'FIR' %}First Class
+                {% elif travel_class == 'BUS' %}Business Class  
+                {% elif travel_class == 'ECO' %}Economy Class
+                {% endif %}
+                | <strong>Passengers:</strong> {{ passengers }}
+            </div>
+        </div>
+    </div>
+
+    <form action="{{ url_for('process_booking') }}" method="post" id="passengerForm">
+        {% for i in range(passengers) %}
+        <div class="passenger-form-container">
+            <div class="passenger-section">
+                <div class="passenger-header">
+                    <h5 class="mb-0">Passenger {{ i + 1 }}</h5>
+                    <small>Seat: {{ selected_outbound_seats[i] }}{% if selected_return_seats %} / {{ selected_return_seats[i] }}{% endif %}</small>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="first_name_{{ i }}" class="form-label">First Name *</label>
+                        <input type="text" class="form-control" id="first_name_{{ i }}" 
+                               name="first_name_{{ i }}" required maxlength="50">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="last_name_{{ i }}" class="form-label">Last Name *</label>
+                        <input type="text" class="form-control" id="last_name_{{ i }}" 
+                               name="last_name_{{ i }}" required maxlength="50">
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="email_{{ i }}" class="form-label">Email Address *</label>
+                        <input type="email" class="form-control" id="email_{{ i }}" 
+                               name="email_{{ i }}" required maxlength="100">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="phone_{{ i }}" class="form-label">Phone Number *</label>
+                        <input type="tel" class="form-control" id="phone_{{ i }}" 
+                               name="phone_{{ i }}" required maxlength="20">
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-8 mb-3">
+                        <label for="address_{{ i }}" class="form-label">Address *</label>
+                        <input type="text" class="form-control" id="address_{{ i }}" 
+                               name="address_{{ i }}" required maxlength="200">
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label for="city_{{ i }}" class="form-label">City *</label>
+                        <input type="text" class="form-control" id="city_{{ i }}" 
+                               name="city_{{ i }}" required maxlength="50">
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+        <!-- Hidden fields to preserve seat selection -->
+        <input type="hidden" name="selected_outbound_seats" value="{{ selected_outbound_seats|join(',') }}">
+        <input type="hidden" name="selected_return_seats" value="{{ selected_return_seats|join(',') }}">
+        <input type="hidden" name="outbound_flight_id" value="{{ outbound_flight[0] }}">
+        {% if return_flight %}
+        <input type="hidden" name="return_flight_id" value="{{ return_flight[0] }}">
+        {% endif %}
+
+        <div class="row mt-4">
+            <div class="col-md-6">
+                <button type="button" class="btn btn-secondary w-100" onclick="history.back()">Back to Seat Selection</button>
+            </div>
+            <div class="col-md-6">
+                <button type="submit" class="btn btn-primary w-100" id="confirmBooking">Confirm Booking</button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script>
+    document.getElementById('passengerForm').addEventListener('submit', function(e) {
+        const confirmBooking = confirm('Are you sure you want to confirm this booking? This action cannot be undone.');
+        if (!confirmBooking) {
+            e.preventDefault();
+        }
+    });
+
+    // Form validation
+    document.addEventListener('DOMContentLoaded', function() {
+        const form = document.getElementById('passengerForm');
+        const inputs = form.querySelectorAll('input[required]');
+        
+        inputs.forEach(input => {
+            input.addEventListener('blur', function() {
+                if (!this.value.trim()) {
+                    this.classList.add('is-invalid');
+                } else {
+                    this.classList.remove('is-invalid');
+                }
+            });
+        });
+    });
+</script>
+
+</body>
+</html>
