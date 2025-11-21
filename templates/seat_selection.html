@@ -381,12 +381,15 @@
         return seat;
     }
 
+    // Update the update functions to show better debugging
     function updateOutboundDisplay() {
         document.getElementById("selected-outbound").innerText = selectedOutbound.length ? selectedOutbound.join(", ") : "None";
+        console.log('Current outbound selection:', selectedOutbound);
     }
 
     function updateReturnDisplay() {
         document.getElementById("selected-return").innerText = selectedReturn.length ? selectedReturn.join(", ") : "None";
+        console.log('Current return selection:', selectedReturn);
     }
 
     function confirmBooking() {
@@ -408,7 +411,7 @@
         form.method = 'POST';
         form.action = '/passenger-info';
 
-        // Add outbound seats
+        // Add outbound seats - CRITICAL FIX: Ensure ALL seats are included
         selectedOutbound.forEach(seat => {
             const input = document.createElement('input');
             input.type = 'hidden';
@@ -417,7 +420,7 @@
             form.appendChild(input);
         });
 
-        // Add return seats if round trip
+        // Add return seats if round trip - CRITICAL FIX: Ensure ALL seats are included
         if (tripType === 'round_trip') {
             selectedReturn.forEach(seat => {
                 const input = document.createElement('input');

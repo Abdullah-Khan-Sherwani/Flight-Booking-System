@@ -1,0 +1,13 @@
+[2025-11-20 09:10:03] Migration started
+[2025-11-20 09:10:03] Database: localhost:1521/ORCLPDB
+[2025-11-20 09:10:03] User: flight_admin
+[2025-11-20 09:10:03] 
+Connecting to database...
+[2025-11-20 09:10:05] ✓ Connected successfully
+[2025-11-20 09:10:05] 
+============================================================
+[2025-11-20 09:10:05] Executing: D:\DBS\Projectlight_management\sql\migration_backup_existing_data.sql
+[2025-11-20 09:10:05] ============================================================
+[2025-11-20 09:10:05] ERROR: File not found: D:\DBS\Projectlight_management\sql\migration_backup_existing_data.sql
+[2025-11-20 09:10:05] 
+⚠ Error in D:\DBS\Projectlight_management\sql\migration_backup_existing_data.sql

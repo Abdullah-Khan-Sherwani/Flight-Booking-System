@@ -1,0 +1,15 @@
+[2025-11-20 09:14:38] Migration started
+[2025-11-20 09:14:38] Database: localhost:1521/ORCLPDB
+[2025-11-20 09:14:38] User: flight_admin
+[2025-11-20 09:14:38] 
+Connecting to database...
+[2025-11-20 09:14:40] ✓ Connected successfully
+[2025-11-20 09:14:40] 
+============================================================
+[2025-11-20 09:14:40] Executing: D:\DBS\Project\flight_management\sql\migration\01_backup_existing_data.sql
+[2025-11-20 09:14:40] ============================================================
+[2025-11-20 09:14:40]   ERROR in statement 6: ORA-02185: a token other than WORK follows COMMIT
+Help: https://docs.oracle.com/error-help/db/ora-02185/
+[2025-11-20 09:14:40] ✓ Completed: 0 statements executed, 1 errors
+[2025-11-20 09:14:40] 
+⚠ Error in D:\DBS\Project\flight_management\sql\migration\01_backup_existing_data.sql

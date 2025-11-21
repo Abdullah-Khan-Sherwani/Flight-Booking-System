@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Booking Details - IAT Airlines</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .flight-card {
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 15px;
+        }
+        .selected-flight {
+            border-color: #007bff;
+            background-color: #f8f9ff;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="{{ url_for('home') }}">IAT Airlines</a>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <h2>Your Booking Details</h2>
+        
+        <div class="alert alert-info">
+            <strong>Booking ID:</strong> {{ booking_info.booking_id }} | 
+            <strong>Status:</strong> {{ booking_info.booking_status }} | 
+            <strong>Total Amount:</strong> Rs. {{ "%.2f"|format(booking_info.total_amount) }}
+        </div>
+
+        <form method="POST" action="{{ url_for('process_booking_action') }}">
+            <input type="hidden" name="cnic" value="{{ cnic }}">
+            <input type="hidden" name="booking_id" value="{{ booking_info.booking_id }}">
+            <input type="hidden" name="action_type" value="{{ action_type }}">
+            
+            <h4 class="mb-3">Select Flights to {{ "Cancel" if action_type == "cancel" else "Reschedule" }}:</h4>
+            
+            {% for reservation in reservations %}
+            <div class="flight-card">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" 
+                           name="selected_reservations" 
+                           value="{{ reservation.reservation_id }}" 
+                           id="res{{ loop.index }}">
+                    <label class="form-check-label w-100" for="res{{ loop.index }}">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <h5>Flight {{ reservation.flight_id }}</h5>
+                                <p class="mb-1">
+                                    <strong>Passenger:</strong> {{ reservation.passenger_name }} ({{ reservation.passenger_cnic }})
+                                </p>
+                                <p class="mb-1">
+                                    <strong>Route:</strong> {{ reservation.departure_city }} → {{ reservation.arrival_city }}
+                                </p>
+                                <p class="mb-1">
+                                    <strong>Departure:</strong> {{ reservation.departure_time }}
+                                </p>
+                                <p class="mb-1">
+                                    <strong>Arrival:</strong> {{ reservation.arrival_time }}
+                                </p>
+                                <p class="mb-0">
+                                    <strong>Seat:</strong> {{ reservation.seat_number }} ({{ reservation.travel_class }}) - Rs. {{ "%.2f"|format(reservation.seat_cost) }}
+                                </p>
+                            </div>
+                            <div class="col-md-4">
+                                <p class="mb-1"><strong>Reservation ID:</strong> {{ reservation.reservation_id }}</p>
+                                <p class="mb-0"><strong>Status:</strong> {{ reservation.reservation_status }}</p>
+                            </div>
+                        </div>
+                    </label>
+                </div>
+            </div>
+            {% endfor %}
+
+            {% if not reservations %}
+            <div class="alert alert-warning">
+                No active reservations found for this booking.
+            </div>
+            {% endif %}
+
+            <div class="mt-4">
+                <button type="submit" class="btn btn-{{ 'danger' if action_type == 'cancel' else 'warning' }} btn-lg"
+                        {{ 'disabled' if not reservations }}>
+                    {{ 'Cancel Selected Flights' if action_type == 'cancel' else 'Reschedule Selected Flights' }}
+                </button>
+                <a href="{{ url_for('manage_bookings') }}" class="btn btn-secondary btn-lg">Back</a>
+            </div>
+        </form>
+    </div>
+</body>
+</html>

@@ -41,6 +41,11 @@
             margin-bottom: 25px;
             border-left: 4px solid #007bff;
         }
+        .cnic-format {
+            font-size: 12px;
+            color: #6c757d;
+            margin-top: 5px;
+        }
     </style>
 </head>
 <body>
@@ -92,6 +97,23 @@
                     <small>Seat: {{ selected_outbound_seats[i] }}{% if selected_return_seats %} / {{ selected_return_seats[i] }}{% endif %}</small>
                 </div>
                 
+                <!-- CNIC Field -->
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="cnic_{{ i }}" class="form-label">CNIC *</label>
+                        <input type="text" class="form-control" id="cnic_{{ i }}" 
+                               name="cnic_{{ i }}" required pattern="\d{5}-\d{7}-\d{1}" 
+                               placeholder="XXXXX-XXXXXXX-X" maxlength="15">
+                        <div class="cnic-format">Format: XXXXX-XXXXXXX-X</div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="date_of_birth_{{ i }}" class="form-label">Date of Birth *</label>
+                        <input type="date" class="form-control" id="date_of_birth_{{ i }}" 
+                               name="date_of_birth_{{ i }}" required>
+                    </div>
+                </div>
+
+                <!-- Personal Information -->
                 <div class="row">
                     <div class="col-md-6 mb-3">
                         <label for="first_name_{{ i }}" class="form-label">First Name *</label>
@@ -104,7 +126,29 @@
                                name="last_name_{{ i }}" required maxlength="50">
                     </div>
                 </div>
+
+                <!-- Gender Field -->
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Gender *</label>
+                        <div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="gender_{{ i }}" id="gender_m_{{ i }}" value="M" required>
+                                <label class="form-check-label" for="gender_m_{{ i }}">Male</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="gender_{{ i }}" id="gender_f_{{ i }}" value="F">
+                                <label class="form-check-label" for="gender_f_{{ i }}">Female</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="gender_{{ i }}" id="gender_o_{{ i }}" value="O">
+                                <label class="form-check-label" for="gender_o_{{ i }}">Other</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 
+                <!-- Contact Information -->
                 <div class="row">
                     <div class="col-md-6 mb-3">
                         <label for="email_{{ i }}" class="form-label">Email Address *</label>
@@ -118,6 +162,7 @@
                     </div>
                 </div>
                 
+                <!-- Address Information -->
                 <div class="row">
                     <div class="col-md-8 mb-3">
                         <label for="address_{{ i }}" class="form-label">Address *</label>
@@ -130,17 +175,36 @@
                                name="city_{{ i }}" required maxlength="50">
                     </div>
                 </div>
+
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <label for="state_{{ i }}" class="form-label">State/Province</label>
+                        <input type="text" class="form-control" id="state_{{ i }}" 
+                               name="state_{{ i }}" maxlength="50">
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label for="postal_code_{{ i }}" class="form-label">Postal Code</label>
+                        <input type="text" class="form-control" id="postal_code_{{ i }}" 
+                               name="postal_code_{{ i }}" maxlength="10">
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label for="country_{{ i }}" class="form-label">Country *</label>
+                        <input type="text" class="form-control" id="country_{{ i }}" 
+                               name="country_{{ i }}" required maxlength="50">
+                    </div>
+                </div>
             </div>
         </div>
         {% endfor %}
 
         <!-- Hidden fields to preserve seat selection -->
-        <input type="hidden" name="selected_outbound_seats" value="{{ selected_outbound_seats|join(',') }}">
-        <input type="hidden" name="selected_return_seats" value="{{ selected_return_seats|join(',') }}">
-        <input type="hidden" name="outbound_flight_id" value="{{ outbound_flight[0] }}">
-        {% if return_flight %}
-        <input type="hidden" name="return_flight_id" value="{{ return_flight[0] }}">
-        {% endif %}
+        {% for seat in selected_outbound_seats %}
+        <input type="hidden" name="selected_outbound_seats" value="{{ seat }}">
+        {% endfor %}
+
+        {% for seat in selected_return_seats %}
+        <input type="hidden" name="selected_return_seats" value="{{ seat }}">
+        {% endfor %}
 
         <div class="row mt-4">
             <div class="col-md-6">
@@ -155,6 +219,26 @@
 
 <script>
     document.getElementById('passengerForm').addEventListener('submit', function(e) {
+        // Validate CNIC format
+        const cnicInputs = document.querySelectorAll('input[name^="cnic_"]');
+        let allValid = true;
+        
+        cnicInputs.forEach(input => {
+            const pattern = /^\d{5}-\d{7}-\d{1}$/;
+            if (!pattern.test(input.value)) {
+                input.classList.add('is-invalid');
+                allValid = false;
+            } else {
+                input.classList.remove('is-invalid');
+            }
+        });
+
+        if (!allValid) {
+            e.preventDefault();
+            alert('Please ensure all CNIC numbers are in the correct format: XXXXX-XXXXXXX-X');
+            return;
+        }
+
         const confirmBooking = confirm('Are you sure you want to confirm this booking? This action cannot be undone.');
         if (!confirmBooking) {
             e.preventDefault();
@@ -174,6 +258,16 @@
                     this.classList.remove('is-invalid');
                 }
             });
+        });
+
+        // Set maximum date for date of birth (18 years ago)
+        const dobInputs = document.querySelectorAll('input[name^="date_of_birth_"]');
+        const maxDate = new Date();
+        maxDate.setFullYear(maxDate.getFullYear() - 18);
+        const maxDateStr = maxDate.toISOString().split('T')[0];
+        
+        dobInputs.forEach(input => {
+            input.max = maxDateStr;
         });
     });
 </script>

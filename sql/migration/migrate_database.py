@@ -13,17 +13,17 @@ import sys
 DB_CONFIG = {
     'user': 'flight_admin',
     'password': 'flight123',
-    'dsn': 'localhost:1521/XEPDB1'
+    'dsn': 'localhost:1521/ORCLPDB'
 }
 
 # SQL files to execute in order
 SQL_FILES = [
-    '01_backup_existing_data.sql',
-    '02_drop_old_tables.sql',
-    '03_create_new_schema.sql',
-    '04_create_procedures.sql',
-    '05_create_triggers.sql',
-    '06_create_indexes.sql'
+    r'D:\DBS\Project\flight_management\sql\migration\01_backup_existing_data.sql',
+    r'D:\DBS\Project\flight_management\sql\migration\02_drop_old_tables.sql',
+    r'D:\DBS\Project\flight_management\sql\migration\03_create_new_schema.sql',
+    r'D:\DBS\Project\flight_management\sql\migration\04_create_procedures.sql',
+    r'D:\DBS\Project\flight_management\sql\migration\05_create_triggers.sql',
+    r'D:\DBS\Project\flight_management\sql\migration\06_create_indexes.sql'
 ]
 
 def log_message(message, log_file):

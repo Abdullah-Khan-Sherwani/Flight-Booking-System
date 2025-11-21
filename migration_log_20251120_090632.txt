@@ -1,0 +1,13 @@
+[2025-11-20 09:06:32] Migration started
+[2025-11-20 09:06:32] Database: localhost:1521/ORCLPDB
+[2025-11-20 09:06:32] User: flight_admin
+[2025-11-20 09:06:32] 
+Connecting to database...
+[2025-11-20 09:06:34] ✓ Connected successfully
+[2025-11-20 09:06:34] 
+============================================================
+[2025-11-20 09:06:34] Executing: 01_backup_existing_data.sql
+[2025-11-20 09:06:34] ============================================================
+[2025-11-20 09:06:34] ERROR: File not found: 01_backup_existing_data.sql
+[2025-11-20 09:06:34] 
+⚠ Error in 01_backup_existing_data.sql

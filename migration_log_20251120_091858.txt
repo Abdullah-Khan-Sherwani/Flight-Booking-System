@@ -1,0 +1,57 @@
+[2025-11-20 09:18:58] Migration started
+[2025-11-20 09:18:58] Database: localhost:1521/ORCLPDB
+[2025-11-20 09:18:58] User: flight_admin
+[2025-11-20 09:18:58] 
+Connecting to database...
+[2025-11-20 09:19:00] ✓ Connected successfully
+[2025-11-20 09:19:00] 
+============================================================
+[2025-11-20 09:19:00] Executing: D:\DBS\Project\flight_management\sql\migration\01_backup_existing_data.sql
+[2025-11-20 09:19:00] ============================================================
+[2025-11-20 09:19:00]   ERROR in statement 6: ORA-02185: a token other than WORK follows COMMIT
+Help: https://docs.oracle.com/error-help/db/ora-02185/
+[2025-11-20 09:19:00] ✓ Completed: 0 statements executed, 1 errors
+[2025-11-20 09:19:00] 
+⚠ Error in D:\DBS\Project\flight_management\sql\migration\01_backup_existing_data.sql
+[2025-11-20 09:19:24] 
+============================================================
+[2025-11-20 09:19:24] Executing: D:\DBS\Project\flight_management\sql\migration\02_drop_old_tables.sql
+[2025-11-20 09:19:24] ============================================================
+[2025-11-20 09:19:24]   ERROR in statement 6: ORA-02185: a token other than WORK follows COMMIT
+Help: https://docs.oracle.com/error-help/db/ora-02185/
+[2025-11-20 09:19:24] ✓ Completed: 1 statements executed, 1 errors
+[2025-11-20 09:19:24] 
+⚠ Error in D:\DBS\Project\flight_management\sql\migration\02_drop_old_tables.sql
+[2025-11-20 09:19:26] 
+============================================================
+[2025-11-20 09:19:26] Executing: D:\DBS\Project\flight_management\sql\migration\03_create_new_schema.sql
+[2025-11-20 09:19:26] ============================================================
+[2025-11-20 09:19:26]   ERROR in statement 7: ORA-02185: a token other than WORK follows COMMIT
+Help: https://docs.oracle.com/error-help/db/ora-02185/
+[2025-11-20 09:19:26] ✓ Completed: 0 statements executed, 1 errors
+[2025-11-20 09:19:26] 
+⚠ Error in D:\DBS\Project\flight_management\sql\migration\03_create_new_schema.sql
+[2025-11-20 09:19:27] 
+============================================================
+[2025-11-20 09:19:27] Executing: D:\DBS\Project\flight_management\sql\migration\04_create_procedures.sql
+[2025-11-20 09:19:27] ============================================================
+[2025-11-20 09:19:27]   ERROR in statement 20: ORA-02185: a token other than WORK follows COMMIT
+Help: https://docs.oracle.com/error-help/db/ora-02185/
+[2025-11-20 09:19:27] ✓ Completed: 9 statements executed, 1 errors
+[2025-11-20 09:19:27] 
+⚠ Error in D:\DBS\Project\flight_management\sql\migration\04_create_procedures.sql
+[2025-11-20 09:19:29] 
+============================================================
+[2025-11-20 09:19:29] Executing: D:\DBS\Project\flight_management\sql\migration\05_create_triggers.sql
+[2025-11-20 09:19:29] ============================================================
+[2025-11-20 09:19:29]   Skipping display query: SELECT trigger_name, status, triggering_event, tab...
+[2025-11-20 09:19:29] ✓ Completed: 6 statements executed, 0 errors
+[2025-11-20 09:19:29] 
+============================================================
+[2025-11-20 09:19:29] Executing: D:\DBS\Project\flight_management\sql\migration\06_create_indexes.sql
+[2025-11-20 09:19:29] ============================================================
+[2025-11-20 09:19:29]   ERROR in statement 3: ORA-02185: a token other than WORK follows COMMIT
+Help: https://docs.oracle.com/error-help/db/ora-02185/
+[2025-11-20 09:19:29] ✓ Completed: 0 statements executed, 1 errors
+[2025-11-20 09:19:29] 
+⚠ Error in D:\DBS\Project\flight_management\sql\migration\06_create_indexes.sql

@@ -20,7 +20,7 @@
             color: #28a745;
             margin-bottom: 20px;
         }
-        .reservation-id {
+        .booking-id {
             background: #e7f3ff;
             padding: 15px;
             border-radius: 8px;
@@ -28,6 +28,31 @@
             font-size: 18px;
             font-weight: bold;
             margin: 20px 0;
+        }
+        .action-buttons {
+            margin: 30px 0;
+        }
+        .btn-download {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            font-size: 16px;
+            border-radius: 8px;
+        }
+        .btn-download:hover {
+            background: #c0392b;
+            color: white;
+        }
+        .download-status {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .hidden {
+            display: none;
         }
     </style>
 </head>
@@ -49,22 +74,122 @@
                 <h2>Booking Confirmed!</h2>
                 <p class="lead">Your flight has been successfully booked.</p>
                 
-                <div class="reservation-id">
-                    Reservation ID: {{ reservation_id }}
+                <div class="booking-id">
+                    Booking ID: {{ booking_id }}
+                </div>
+                
+                <div class="booking-details">
+                    <p><strong>Passengers:</strong> {{ passenger_count }}</p>
+                    <p><strong>Total Amount:</strong> Rs.{{ "%.2f"|format(total_amount|float) }}</p>
+                </div>
+                
+                <!-- Auto Download Status -->
+                <div id="autoDownloadStatus" class="download-status {% if not auto_download %}hidden{% endif %}">
+                    <div class="spinner-border text-success me-2" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <strong>Preparing your tickets for download...</strong>
+                    <p class="mb-0 mt-1">Your tickets will download automatically in a few seconds.</p>
                 </div>
                 
                 <p>Your seats have been reserved and will now show as booked to other customers.</p>
-                <p>An email confirmation has been sent to all passengers.</p>
+                <p>Unique Reservation IDs have been generated for each passenger for future modifications.</p>
                 
-                <div class="mt-4">
-                    <a href="{{ url_for('home') }}" class="btn btn-primary btn-lg">
+                <div class="action-buttons">
+                    <a href="{{ url_for('download_tickets', booking_id=booking_id) }}" 
+                       class="btn btn-download me-3" id="downloadButton">
+                        <i class="fas fa-download me-2"></i>Download All Tickets
+                    </a>
+                    <a href="{{ url_for('home') }}" class="btn btn-primary">
                         <i class="fas fa-home me-2"></i>Return to Home
                     </a>
+                </div>
+                
+                <div class="mt-4 p-3 bg-light rounded">
+                    <h6><i class="fas fa-info-circle me-2"></i>Important Information</h6>
+                    <small class="text-muted">
+                        • Keep your Booking ID ({{ booking_id }}) for future reference<br>
+                        • Each passenger has a unique Reservation ID for cancellations/changes<br>
+                        • Tickets include all necessary details for airport check-in<br>
+                        • You can download tickets again anytime using your Booking ID<br>
+                        • Save the downloaded ZIP file containing all passenger tickets
+                    </small>
                 </div>
             </div>
         </div>
     </div>
 </div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const autoDownload = {{ 'true' if auto_download else 'false' }};
+        const bookingId = '{{ booking_id }}';
+        const downloadButton = document.getElementById('downloadButton');
+        const autoDownloadStatus = document.getElementById('autoDownloadStatus');
+        
+        console.log('Auto download enabled:', autoDownload);
+        console.log('Booking ID:', bookingId);
+        
+        if (autoDownload) {
+            // Show the auto-download status
+            autoDownloadStatus.classList.remove('hidden');
+            
+            // Trigger automatic download after a short delay
+            setTimeout(function() {
+                console.log('Triggering automatic download for booking:', bookingId);
+                
+                // Create a hidden iframe to trigger the download
+                const iframe = document.createElement('iframe');
+                iframe.style.display = 'none';
+                iframe.src = `/download-tickets/${bookingId}`;
+                document.body.appendChild(iframe);
+                
+                // Update status message after download starts
+                setTimeout(function() {
+                    autoDownloadStatus.innerHTML = `
+                        <i class="fas fa-check-circle text-success me-2"></i>
+                        <strong>Tickets downloaded successfully!</strong>
+                        <p class="mb-0 mt-1">Check your downloads folder for the ZIP file containing all tickets.</p>
+                    `;
+                    
+                    // Update download button to indicate success
+                    downloadButton.innerHTML = '<i class="fas fa-redownload me-2"></i>Download Tickets Again';
+                    
+                }, 2000);
+                
+            }, 1500); // 1.5 second delay before starting download
+            
+            // Prevent multiple auto-downloads on page refresh
+            const url = new URL(window.location);
+            url.searchParams.set('auto_download', 'false');
+            window.history.replaceState({}, '', url);
+        }
+        
+        // Add click handler for manual download button
+        downloadButton.addEventListener('click', function(e) {
+            console.log('Manual download triggered for booking:', bookingId);
+            
+            // Show downloading status
+            const originalText = downloadButton.innerHTML;
+            downloadButton.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Downloading...';
+            downloadButton.disabled = true;
+            
+            // Re-enable button after download
+            setTimeout(function() {
+                downloadButton.innerHTML = originalText;
+                downloadButton.disabled = false;
+            }, 3000);
+        });
+        
+        // Handle page visibility changes (in case user switches tabs during download)
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden && autoDownload) {
+                // Page became visible again - check if download completed
+                console.log('Page became visible, checking download status');
+            }
+        });
+    });
+</script>
 
 </body>
 </html>
