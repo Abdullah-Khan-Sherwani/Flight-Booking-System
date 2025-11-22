@@ -47,7 +47,7 @@ class TicketGenerator:
         passenger_info = [
             ["PASSENGER", ""],
             ["Name:", f"{ticket_data['passenger_first_name']} {ticket_data['passenger_last_name']}"],
-            ["CNIC:", ticket_data['passenger_cnic']],
+            ["Passenger ID:", str(ticket_data['passenger_id'])],
             ["Booking ID:", ticket_data['booking_id']],
             ["Reservation ID:", ticket_data['reservation_id']],
             ["Ticket ID:", ticket_data['ticket_id']],
@@ -79,7 +79,7 @@ class TicketGenerator:
             ["From:", ticket_data['departure_city'], "To:", ticket_data['arrival_city']],
             ["Departure:", ticket_data['departure_time'], "Arrival:", ticket_data['arrival_time']],
             ["Date:", ticket_data['flight_date'], "Seat:", ticket_data['seat_number']],
-            ["Aircraft:", ticket_data['aircraft_type'], "Flight Type:", ticket_data['flight_type']],
+            ["Aircraft:", ticket_data['aircraft_type'], "Flight Type:", ticket_data.get('flight_type', 'ONE-WAY')],
         ]
         
         flight_table = Table(flight_info, colWidths=[1.2*inch, 1.8*inch, 1.2*inch, 1.8*inch])
@@ -103,10 +103,9 @@ class TicketGenerator:
         
         # Fare Information
         fare_info = [
-            ["FARE INFORMATION", ""],
-            ["Base Fare:", f"Rs.{ticket_data['seat_cost']:.2f}"],
-            ["Taxes & Fees:", f"Rs.{ticket_data['taxes']:.2f}"],
-            ["Total Paid:", f"Rs.{ticket_data['total_amount']:.2f}"],
+            ["FARE DETAILS", ""],
+            ["Seat Cost:", f"Rs.{ticket_data['seat_cost']:.2f}"],
+            ["Total Paid:", f"Rs.{ticket_data['seat_cost']:.2f}"],
         ]
         
         fare_table = Table(fare_info, colWidths=[2*inch, 3*inch])
@@ -128,6 +127,36 @@ class TicketGenerator:
         elements.append(fare_table)
         elements.append(Spacer(1, 0.3*inch))
         
+        # Contact Information (if available)
+        if ticket_data.get('passenger_email') or ticket_data.get('passenger_phone'):
+            contact_info = [
+                ["CONTACT DETAILS", ""],
+            ]
+            
+            if ticket_data.get('passenger_email'):
+                contact_info.append(["Email:", ticket_data['passenger_email']])
+            if ticket_data.get('passenger_phone'):
+                contact_info.append(["Phone:", ticket_data['passenger_phone']])
+            
+            contact_table = Table(contact_info, colWidths=[2*inch, 3*inch])
+            contact_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#8e44ad')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 12),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#e8daef')),
+                ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
+                ('FONTNAME', (1, 1), (1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 10),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('PADDING', (0, 0), (-1, -1), 6),
+            ]))
+            elements.append(contact_table)
+            elements.append(Spacer(1, 0.3*inch))
+        
         # Important Notes
         notes = [
             "IMPORTANT NOTES:",
@@ -147,7 +176,7 @@ class TicketGenerator:
         # Build PDF
         doc.build(elements)
 
-    def generate_all_tickets(self, booking_data, output_dir="tickets"):
+    def generate_all_tickets(self, booking_data, output_dir="temp_tickets"):
         """Generate tickets for all passengers in a booking"""
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
@@ -157,14 +186,20 @@ class TicketGenerator:
         for i, passenger in enumerate(booking_data['passengers']):
             ticket_id = f"TKT{datetime.now().strftime('%Y%m%d%H%M%S')}{i:03d}"
             
+            # Debug: Print passenger data to identify the issue
+            print(f"DEBUG - Passenger {i} data: {passenger}")
+            
+            # Create ticket data with new schema structure
             ticket_data = {
                 'ticket_id': ticket_id,
                 'booking_id': booking_data['booking_id'],
-                'reservation_id': passenger['reservation_id'],
+                'reservation_id': passenger.get('reservation_id', f"RES{datetime.now().strftime('%Y%m%d%H%M%S')}{i:03d}"),
+                'passenger_id': passenger.get('passenger_id', i + 1),
                 'passenger_first_name': passenger['first_name'],
                 'passenger_last_name': passenger['last_name'],
-                'passenger_cnic': passenger['cnic'],
-                'flight_number': booking_data['flight_number'],
+                'passenger_email': passenger.get('email', ''),
+                'passenger_phone': passenger.get('phone', ''),
+                'flight_number': booking_data.get('flight_number', booking_data.get('instance_id', 'N/A')),
                 'departure_city': booking_data['departure_city'],
                 'arrival_city': booking_data['arrival_city'],
                 'departure_time': booking_data['departure_time'],
@@ -172,11 +207,9 @@ class TicketGenerator:
                 'flight_date': booking_data['flight_date'],
                 'seat_number': passenger['seat_number'],
                 'travel_class': booking_data['travel_class'],
-                'aircraft_type': booking_data['aircraft_type'],
-                'flight_type': booking_data['flight_type'],
-                'seat_cost': passenger['seat_cost'],
-                'taxes': passenger.get('taxes', 0),
-                'total_amount': passenger.get('total_amount', passenger['seat_cost']),
+                'aircraft_type': booking_data.get('aircraft_type', 'N/A'),
+                'flight_type': booking_data.get('flight_type', 'ONE-WAY'),
+                'seat_cost': float(passenger.get('seat_cost', 0)),  # Ensure this is a float
             }
             
             filename = f"{output_dir}/{ticket_data['booking_id']}_{ticket_data['passenger_last_name']}_{i+1}.pdf"
@@ -196,3 +229,32 @@ class TicketGenerator:
                 zipf.write(ticket_file, os.path.basename(ticket_file))
         
         return output_filename
+
+    def generate_ticket_from_reservation(self, reservation_data, output_path):
+        """Generate a ticket from reservation data (for single ticket view)"""
+        ticket_id = f"TKT{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        
+        ticket_data = {
+            'ticket_id': ticket_id,
+            'booking_id': reservation_data['booking_id'],
+            'reservation_id': reservation_data['reservation_id'],
+            'passenger_id': reservation_data.get('passenger_id', 1),
+            'passenger_first_name': reservation_data['passenger_name'].split(' ')[0] if ' ' in reservation_data['passenger_name'] else reservation_data['passenger_name'],
+            'passenger_last_name': reservation_data['passenger_name'].split(' ')[1] if ' ' in reservation_data['passenger_name'] else '',
+            'passenger_email': reservation_data.get('email', ''),
+            'passenger_phone': reservation_data.get('phone', ''),
+            'flight_number': reservation_data['flight_number'],
+            'departure_city': reservation_data['departure_city'],
+            'arrival_city': reservation_data['arrival_city'],
+            'departure_time': reservation_data['departure_time'],
+            'arrival_time': reservation_data['arrival_time'],
+            'flight_date': reservation_data['flight_date'],
+            'seat_number': reservation_data['seat_number'],
+            'travel_class': reservation_data['travel_class'],
+            'aircraft_type': reservation_data.get('aircraft_type', 'N/A'),
+            'flight_type': 'ONE-WAY',  # Default for single ticket view
+            'seat_cost': float(reservation_data.get('seat_cost', 0)),  # Ensure this is a float
+        }
+        
+        self.generate_ticket(ticket_data, output_path)
+        return output_path

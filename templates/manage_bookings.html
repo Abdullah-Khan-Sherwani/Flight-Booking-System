@@ -45,23 +45,17 @@
             
             <form method="POST" action="{{ url_for('verify_booking') }}">
                 <div class="mb-3">
-                    <label for="cnic" class="form-label">CNIC</label>
-                    <input type="text" class="form-control" id="cnic" name="cnic" 
-                           placeholder="XXXXX-XXXXXXX-X" required 
-                           pattern="\d{5}-\d{7}-\d{1}">
-                    <div class="form-text">Format: XXXXX-XXXXXXX-X</div>
+                    <label for="email" class="form-label">Email or Phone Number *</label>
+                    <input type="text" class="form-control" id="email" name="email" 
+                           placeholder="Enter your email or phone number" required>
+                    <div class="form-text">Use the email or phone number used during booking</div>
                 </div>
                 
                 <div class="mb-3">
-                    <label for="booking_id" class="form-label">Booking ID</label>
+                    <label for="booking_id" class="form-label">Booking ID (PNR) *</label>
                     <input type="text" class="form-control" id="booking_id" name="booking_id" 
-                           placeholder="e.g., BKG20241201123045" required>
-                </div>
-                
-                <div class="mb-4">
-                    <label for="reservation_id" class="form-label">Reservation ID</label>
-                    <input type="text" class="form-control" id="reservation_id" name="reservation_id" 
-                           placeholder="e.g., RES20241201123045" required>
+                           placeholder="e.g., ABC123" required maxlength="6">
+                    <div class="form-text">Your 6-character booking reference</div>
                 </div>
 
                 <div class="mb-4">

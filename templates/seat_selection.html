@@ -406,12 +406,25 @@
             }
         }
 
-        // Create a form and submit to passenger info page
+        // Create a form and submit to the correct endpoint
         const form = document.createElement('form');
         form.method = 'POST';
-        form.action = '/passenger-info';
+        
+        // Determine if this is a reschedule operation
+        const isReschedule = {{ 'true' if is_reschedule else 'false' }};
+        console.log('Is reschedule operation:', isReschedule);
+        
+        if (isReschedule) {
+            // For reschedule, submit directly to complete_reschedule
+            form.action = '/complete-reschedule';
+            console.log('Submitting to reschedule endpoint');
+        } else {
+            // For normal booking, submit to passenger-info
+            form.action = '/passenger-info';
+            console.log('Submitting to normal booking endpoint');
+        }
 
-        // Add outbound seats - CRITICAL FIX: Ensure ALL seats are included
+        // Add outbound seats
         selectedOutbound.forEach(seat => {
             const input = document.createElement('input');
             input.type = 'hidden';
@@ -420,7 +433,7 @@
             form.appendChild(input);
         });
 
-        // Add return seats if round trip - CRITICAL FIX: Ensure ALL seats are included
+        // Add return seats if round trip
         if (tripType === 'round_trip') {
             selectedReturn.forEach(seat => {
                 const input = document.createElement('input');

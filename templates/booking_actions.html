@@ -31,11 +31,11 @@
         <div class="alert alert-info">
             <strong>Booking ID:</strong> {{ booking_info.booking_id }} | 
             <strong>Status:</strong> {{ booking_info.booking_status }} | 
-            <strong>Total Amount:</strong> Rs. {{ "%.2f"|format(booking_info.total_amount) }}
+            <strong>Contact:</strong> {{ booking_info.contact_email or booking_info.contact_phone }}
         </div>
 
         <form method="POST" action="{{ url_for('process_booking_action') }}">
-            <input type="hidden" name="cnic" value="{{ cnic }}">
+            <input type="hidden" name="email" value="{{ email }}">
             <input type="hidden" name="booking_id" value="{{ booking_info.booking_id }}">
             <input type="hidden" name="action_type" value="{{ action_type }}">
             
@@ -51,9 +51,9 @@
                     <label class="form-check-label w-100" for="res{{ loop.index }}">
                         <div class="row">
                             <div class="col-md-8">
-                                <h5>Flight {{ reservation.flight_id }}</h5>
+                                <h5>Flight {{ reservation.instance_id }}</h5>
                                 <p class="mb-1">
-                                    <strong>Passenger:</strong> {{ reservation.passenger_name }} ({{ reservation.passenger_cnic }})
+                                    <strong>Passenger:</strong> {{ reservation.passenger_name }}
                                 </p>
                                 <p class="mb-1">
                                     <strong>Route:</strong> {{ reservation.departure_city }} → {{ reservation.arrival_city }}
@@ -70,7 +70,7 @@
                             </div>
                             <div class="col-md-4">
                                 <p class="mb-1"><strong>Reservation ID:</strong> {{ reservation.reservation_id }}</p>
-                                <p class="mb-0"><strong>Status:</strong> {{ reservation.reservation_status }}</p>
+                                <p class="mb-0"><strong>Class:</strong> {{ reservation.travel_class }}</p>
                             </div>
                         </div>
                     </label>

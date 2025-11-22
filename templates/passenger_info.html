@@ -41,7 +41,7 @@
             margin-bottom: 25px;
             border-left: 4px solid #007bff;
         }
-        .cnic-format {
+        .passport-format {
             font-size: 12px;
             color: #6c757d;
             margin-top: 5px;
@@ -97,22 +97,6 @@
                     <small>Seat: {{ selected_outbound_seats[i] }}{% if selected_return_seats %} / {{ selected_return_seats[i] }}{% endif %}</small>
                 </div>
                 
-                <!-- CNIC Field -->
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <label for="cnic_{{ i }}" class="form-label">CNIC *</label>
-                        <input type="text" class="form-control" id="cnic_{{ i }}" 
-                               name="cnic_{{ i }}" required pattern="\d{5}-\d{7}-\d{1}" 
-                               placeholder="XXXXX-XXXXXXX-X" maxlength="15">
-                        <div class="cnic-format">Format: XXXXX-XXXXXXX-X</div>
-                    </div>
-                    <div class="col-md-6 mb-3">
-                        <label for="date_of_birth_{{ i }}" class="form-label">Date of Birth *</label>
-                        <input type="date" class="form-control" id="date_of_birth_{{ i }}" 
-                               name="date_of_birth_{{ i }}" required>
-                    </div>
-                </div>
-
                 <!-- Personal Information -->
                 <div class="row">
                     <div class="col-md-6 mb-3">
@@ -127,8 +111,13 @@
                     </div>
                 </div>
 
-                <!-- Gender Field -->
+                <!-- Date of Birth and Gender -->
                 <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="date_of_birth_{{ i }}" class="form-label">Date of Birth *</label>
+                        <input type="date" class="form-control" id="date_of_birth_{{ i }}" 
+                               name="date_of_birth_{{ i }}" required>
+                    </div>
                     <div class="col-md-6 mb-3">
                         <label class="form-label">Gender *</label>
                         <div>
@@ -162,35 +151,14 @@
                     </div>
                 </div>
                 
-                <!-- Address Information -->
+                <!-- Passport Information -->
                 <div class="row">
-                    <div class="col-md-8 mb-3">
-                        <label for="address_{{ i }}" class="form-label">Address *</label>
-                        <input type="text" class="form-control" id="address_{{ i }}" 
-                               name="address_{{ i }}" required maxlength="200">
-                    </div>
-                    <div class="col-md-4 mb-3">
-                        <label for="city_{{ i }}" class="form-label">City *</label>
-                        <input type="text" class="form-control" id="city_{{ i }}" 
-                               name="city_{{ i }}" required maxlength="50">
-                    </div>
-                </div>
-
-                <div class="row">
-                    <div class="col-md-4 mb-3">
-                        <label for="state_{{ i }}" class="form-label">State/Province</label>
-                        <input type="text" class="form-control" id="state_{{ i }}" 
-                               name="state_{{ i }}" maxlength="50">
-                    </div>
-                    <div class="col-md-4 mb-3">
-                        <label for="postal_code_{{ i }}" class="form-label">Postal Code</label>
-                        <input type="text" class="form-control" id="postal_code_{{ i }}" 
-                               name="postal_code_{{ i }}" maxlength="10">
-                    </div>
-                    <div class="col-md-4 mb-3">
-                        <label for="country_{{ i }}" class="form-label">Country *</label>
-                        <input type="text" class="form-control" id="country_{{ i }}" 
-                               name="country_{{ i }}" required maxlength="50">
+                    <div class="col-md-12 mb-3">
+                        <label for="passport_number_{{ i }}" class="form-label">Passport Number (Optional)</label>
+                        <input type="text" class="form-control" id="passport_number_{{ i }}" 
+                               name="passport_number_{{ i }}" maxlength="20" 
+                               placeholder="Enter passport number if available">
+                        <div class="passport-format">Optional for domestic flights</div>
                     </div>
                 </div>
             </div>
@@ -219,26 +187,6 @@
 
 <script>
     document.getElementById('passengerForm').addEventListener('submit', function(e) {
-        // Validate CNIC format
-        const cnicInputs = document.querySelectorAll('input[name^="cnic_"]');
-        let allValid = true;
-        
-        cnicInputs.forEach(input => {
-            const pattern = /^\d{5}-\d{7}-\d{1}$/;
-            if (!pattern.test(input.value)) {
-                input.classList.add('is-invalid');
-                allValid = false;
-            } else {
-                input.classList.remove('is-invalid');
-            }
-        });
-
-        if (!allValid) {
-            e.preventDefault();
-            alert('Please ensure all CNIC numbers are in the correct format: XXXXX-XXXXXXX-X');
-            return;
-        }
-
         const confirmBooking = confirm('Are you sure you want to confirm this booking? This action cannot be undone.');
         if (!confirmBooking) {
             e.preventDefault();
