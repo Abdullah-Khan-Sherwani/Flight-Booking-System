@@ -89,6 +89,34 @@
     </div>
 
     <form action="{{ url_for('process_booking') }}" method="post" id="passengerForm">
+        <!-- Contact Information Section -->
+        <div class="passenger-form-container mb-4">
+            <div class="passenger-section">
+                <div class="passenger-header">
+                    <h5 class="mb-0">Contact Information</h5>
+                    <small>Primary contact for this booking</small>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="contact_email" class="form-label">Email Address *</label>
+                        <input type="email" class="form-control" id="contact_email" 
+                            name="contact_email" required maxlength="100"
+                            placeholder="Enter your email address"
+                            value="{{ user_email }}">
+                        <div class="form-text">Your account email (can be changed for this booking)</div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="contact_phone" class="form-label">Emergency Phone *</label>
+                        <input type="tel" class="form-control" id="contact_phone" 
+                            name="contact_phone" required maxlength="20"
+                            placeholder="Enter emergency phone number"
+                            value="{{ user_phone }}">
+                        <div class="form-text">Your account phone number (can be changed for this booking)</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         {% for i in range(passengers) %}
         <div class="passenger-form-container">
             <div class="passenger-section">
@@ -97,57 +125,62 @@
                     <small>Seat: {{ selected_outbound_seats[i] }}{% if selected_return_seats %} / {{ selected_return_seats[i] }}{% endif %}</small>
                 </div>
                 
-                <!-- Personal Information -->
+                <!-- Title and Personal Information -->
                 <div class="row">
-                    <div class="col-md-6 mb-3">
+                    <div class="col-md-3 mb-3">
+                        <label for="title_{{ i }}" class="form-label">Title *</label>
+                        <select class="form-select" id="title_{{ i }}" name="title_{{ i }}" required>
+                            <option value="">Select Title</option>
+                            <option value="MR">Mr.</option>
+                            <option value="MS">Ms.</option>
+                            <option value="MRS">Mrs.</option>
+                            <option value="DR">Dr.</option>
+                            <option value="MX">Mx.</option>
+                            <option value="CHD">Child</option>
+                            <option value="INF">Infant</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4 mb-3">
                         <label for="first_name_{{ i }}" class="form-label">First Name *</label>
                         <input type="text" class="form-control" id="first_name_{{ i }}" 
                                name="first_name_{{ i }}" required maxlength="50">
                     </div>
-                    <div class="col-md-6 mb-3">
+                    <div class="col-md-5 mb-3">
                         <label for="last_name_{{ i }}" class="form-label">Last Name *</label>
                         <input type="text" class="form-control" id="last_name_{{ i }}" 
                                name="last_name_{{ i }}" required maxlength="50">
                     </div>
                 </div>
 
-                <!-- Date of Birth and Gender -->
+                <!-- Date of Birth, Gender, and Nationality -->
                 <div class="row">
-                    <div class="col-md-6 mb-3">
+                    <div class="col-md-4 mb-3">
                         <label for="date_of_birth_{{ i }}" class="form-label">Date of Birth *</label>
                         <input type="date" class="form-control" id="date_of_birth_{{ i }}" 
                                name="date_of_birth_{{ i }}" required>
                     </div>
-                    <div class="col-md-6 mb-3">
+                    <div class="col-md-4 mb-3">
                         <label class="form-label">Gender *</label>
                         <div>
                             <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="radio" name="gender_{{ i }}" id="gender_m_{{ i }}" value="M" required>
+                                <input class="form-check-input" type="radio" name="gender_{{ i }}" id="gender_m_{{ i }}" value="MALE" required>
                                 <label class="form-check-label" for="gender_m_{{ i }}">Male</label>
                             </div>
                             <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="radio" name="gender_{{ i }}" id="gender_f_{{ i }}" value="F">
+                                <input class="form-check-input" type="radio" name="gender_{{ i }}" id="gender_f_{{ i }}" value="FEMALE">
                                 <label class="form-check-label" for="gender_f_{{ i }}">Female</label>
                             </div>
                             <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="radio" name="gender_{{ i }}" id="gender_o_{{ i }}" value="O">
+                                <input class="form-check-input" type="radio" name="gender_{{ i }}" id="gender_o_{{ i }}" value="OTHER">
                                 <label class="form-check-label" for="gender_o_{{ i }}">Other</label>
                             </div>
                         </div>
                     </div>
-                </div>
-                
-                <!-- Contact Information -->
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <label for="email_{{ i }}" class="form-label">Email Address *</label>
-                        <input type="email" class="form-control" id="email_{{ i }}" 
-                               name="email_{{ i }}" required maxlength="100">
-                    </div>
-                    <div class="col-md-6 mb-3">
-                        <label for="phone_{{ i }}" class="form-label">Phone Number *</label>
-                        <input type="tel" class="form-control" id="phone_{{ i }}" 
-                               name="phone_{{ i }}" required maxlength="20">
+                    <div class="col-md-4 mb-3">
+                        <label for="nationality_{{ i }}" class="form-label">Nationality *</label>
+                        <input type="text" class="form-control" id="nationality_{{ i }}" 
+                               name="nationality_{{ i }}" required maxlength="50"
+                               placeholder="e.g., American, British, etc.">
                     </div>
                 </div>
                 
@@ -187,6 +220,16 @@
 
 <script>
     document.getElementById('passengerForm').addEventListener('submit', function(e) {
+        // Validate contact information
+        const contactEmail = document.getElementById('contact_email').value;
+        const contactPhone = document.getElementById('contact_phone').value;
+        
+        if (!contactEmail || !contactPhone) {
+            alert('Please fill in both contact email and emergency phone number.');
+            e.preventDefault();
+            return;
+        }
+
         const confirmBooking = confirm('Are you sure you want to confirm this booking? This action cannot be undone.');
         if (!confirmBooking) {
             e.preventDefault();
@@ -196,7 +239,7 @@
     // Form validation
     document.addEventListener('DOMContentLoaded', function() {
         const form = document.getElementById('passengerForm');
-        const inputs = form.querySelectorAll('input[required]');
+        const inputs = form.querySelectorAll('input[required], select[required]');
         
         inputs.forEach(input => {
             input.addEventListener('blur', function() {
@@ -208,14 +251,22 @@
             });
         });
 
-        // Set maximum date for date of birth (18 years ago)
+        // Set maximum date for date of birth (today)
         const dobInputs = document.querySelectorAll('input[name^="date_of_birth_"]');
         const maxDate = new Date();
-        maxDate.setFullYear(maxDate.getFullYear() - 18);
         const maxDateStr = maxDate.toISOString().split('T')[0];
         
         dobInputs.forEach(input => {
             input.max = maxDateStr;
+        });
+
+        // Set minimum date for date of birth (120 years ago)
+        const minDate = new Date();
+        minDate.setFullYear(minDate.getFullYear() - 120);
+        const minDateStr = minDate.toISOString().split('T')[0];
+        
+        dobInputs.forEach(input => {
+            input.min = minDateStr;
         });
     });
 </script>

@@ -16,6 +16,14 @@
             border-color: #007bff;
             background-color: #f8f9ff;
         }
+        .passenger-badge {
+            background: #6c757d;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 12px;
+            margin-left: 5px;
+        }
     </style>
 </head>
 <body>
@@ -30,8 +38,11 @@
         
         <div class="alert alert-info">
             <strong>Booking ID:</strong> {{ booking_info.booking_id }} | 
-            <strong>Status:</strong> {{ booking_info.booking_status }} | 
-            <strong>Contact:</strong> {{ booking_info.contact_email or booking_info.contact_phone }}
+            <strong>Status:</strong> 
+            <span class="badge bg-{{ 'success' if booking_info.booking_status == 'CONFIRMED' else 'warning' if booking_info.booking_status == 'PENDING' else 'danger' }}">
+                {{ booking_info.booking_status }}
+            </span> | 
+            <strong>Contact:</strong> {{ booking_info.contact_email }} | {{ booking_info.contact_phone }}
         </div>
 
         <form method="POST" action="{{ url_for('process_booking_action') }}">
@@ -54,9 +65,15 @@
                                 <h5>Flight {{ reservation.instance_id }}</h5>
                                 <p class="mb-1">
                                     <strong>Passenger:</strong> {{ reservation.passenger_name }}
+                                    {% if reservation.title %}
+                                    <span class="passenger-badge">{{ reservation.title }}</span>
+                                    {% endif %}
+                                    {% if reservation.nationality %}
+                                    <span class="passenger-badge">{{ reservation.nationality }}</span>
+                                    {% endif %}
                                 </p>
                                 <p class="mb-1">
-                                    <strong>Route:</strong> {{ reservation.departure_city }} → {{ reservation.arrival_city }}
+                                    <strong>Route:</strong> {{ reservation.departure_city }} ({{ reservation.departure_airport }}) → {{ reservation.arrival_city }} ({{ reservation.arrival_airport }})
                                 </p>
                                 <p class="mb-1">
                                     <strong>Departure:</strong> {{ reservation.departure_time }}
@@ -65,12 +82,24 @@
                                     <strong>Arrival:</strong> {{ reservation.arrival_time }}
                                 </p>
                                 <p class="mb-0">
-                                    <strong>Seat:</strong> {{ reservation.seat_number }} ({{ reservation.travel_class }}) - Rs. {{ "%.2f"|format(reservation.seat_cost) }}
+                                    <strong>Seat:</strong> {{ reservation.seat_number }} 
+                                    <span class="badge bg-{{ 'success' if reservation.travel_class == 'ECO' else 'warning' if reservation.travel_class == 'BUS' else 'danger' }}">
+                                        {% if reservation.travel_class == 'ECO' %}Economy
+                                        {% elif reservation.travel_class == 'BUS' %}Business
+                                        {% elif reservation.travel_class == 'FIR' %}First Class
+                                        {% else %}{{ reservation.travel_class }}
+                                        {% endif %}
+                                    </span>
+                                    - Rs. {{ "%.2f"|format(reservation.seat_cost) }}
                                 </p>
                             </div>
                             <div class="col-md-4">
                                 <p class="mb-1"><strong>Reservation ID:</strong> {{ reservation.reservation_id }}</p>
-                                <p class="mb-0"><strong>Class:</strong> {{ reservation.travel_class }}</p>
+                                <p class="mb-0"><strong>Class:</strong> 
+                                    <span class="badge bg-{{ 'success' if reservation.travel_class == 'ECO' else 'warning' if reservation.travel_class == 'BUS' else 'danger' }}">
+                                        {{ reservation.travel_class }}
+                                    </span>
+                                </p>
                             </div>
                         </div>
                     </label>

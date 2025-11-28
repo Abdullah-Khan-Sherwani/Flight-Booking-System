@@ -54,6 +54,11 @@
             border-radius: 5px;
             margin: 10px 0;
         }
+        .passenger-title {
+            font-size: 14px;
+            color: #666;
+            margin-left: 5px;
+        }
     </style>
 </head>
 <body>
@@ -69,12 +74,19 @@
         <div class="section-title">PASSENGER INFORMATION</div>
         <div class="info-row">
             <span class="info-label">Name:</span>
-            <span>{{ passenger_name }}</span>
+            <span>
+                {{ passenger_name }}
+                {% if title %}
+                <span class="passenger-title">({{ title }})</span>
+                {% endif %}
+            </span>
         </div>
+        {% if nationality %}
         <div class="info-row">
-            <span class="info-label">Passenger ID:</span>
-            <span>{{ passenger_id }}</span>
+            <span class="info-label">Nationality:</span>
+            <span>{{ nationality }}</span>
         </div>
+        {% endif %}
         <div class="info-row">
             <span class="info-label">Booking ID:</span>
             <span>{{ booking_id }}</span>
@@ -94,6 +106,7 @@
             <div class="row text-center">
                 <div class="col-md-4">
                     <strong>{{ departure_city }}</strong><br>
+                    <small>{{ departure_airport }}</small><br>
                     <small>Departure</small>
                 </div>
                 <div class="col-md-4">
@@ -102,6 +115,7 @@
                 </div>
                 <div class="col-md-4">
                     <strong>{{ arrival_city }}</strong><br>
+                    <small>{{ arrival_airport }}</small><br>
                     <small>Arrival</small>
                 </div>
             </div>
@@ -129,7 +143,13 @@
         </div>
         <div class="info-row">
             <span class="info-label">Class:</span>
-            <span>{{ travel_class }}</span>
+            <span>
+                {% if travel_class == 'ECO' %}Economy
+                {% elif travel_class == 'BUS' %}Business
+                {% elif travel_class == 'FIR' %}First Class
+                {% else %}{{ travel_class }}
+                {% endif %}
+            </span>
         </div>
         <div class="info-row">
             <span class="info-label">Aircraft:</span>

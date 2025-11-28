@@ -176,6 +176,7 @@ class TicketGenerator:
         # Build PDF
         doc.build(elements)
 
+    # In the generate_all_tickets method, update the ticket_data creation:
     def generate_all_tickets(self, booking_data, output_dir="temp_tickets"):
         """Generate tickets for all passengers in a booking"""
         if not os.path.exists(output_dir):
@@ -197,11 +198,13 @@ class TicketGenerator:
                 'passenger_id': passenger.get('passenger_id', i + 1),
                 'passenger_first_name': passenger['first_name'],
                 'passenger_last_name': passenger['last_name'],
-                'passenger_email': passenger.get('email', ''),
-                'passenger_phone': passenger.get('phone', ''),
+                'passenger_title': passenger.get('title', ''),
+                'passenger_nationality': passenger.get('nationality', ''),
                 'flight_number': booking_data.get('flight_number', booking_data.get('instance_id', 'N/A')),
                 'departure_city': booking_data['departure_city'],
                 'arrival_city': booking_data['arrival_city'],
+                'departure_airport': booking_data.get('departure_airport', ''),
+                'arrival_airport': booking_data.get('arrival_airport', ''),
                 'departure_time': booking_data['departure_time'],
                 'arrival_time': booking_data['arrival_time'],
                 'flight_date': booking_data['flight_date'],

@@ -1,274 +1,449 @@
--- ============================================
--- UNIFIED FLIGHT BOOKING SYSTEM - 3NF SCHEMA
--- (Oracle / ORCLPDB)
--- ============================================
-
--- If needed, you can fix the schema:
--- ALTER SESSION SET CURRENT_SCHEMA = flight_admin;
-
-------------------------------------------------
--- 0. (OPTIONAL) DROP OLD TABLES IN SAFE ORDER
-------------------------------------------------
- DROP TABLE Flight_Change_Log CASCADE CONSTRAINTS;
- DROP TABLE Cancellation_Log CASCADE CONSTRAINTS;
- DROP TABLE Payment CASCADE CONSTRAINTS;
- DROP TABLE Reservation CASCADE CONSTRAINTS;
- DROP TABLE Booking CASCADE CONSTRAINTS;
- DROP TABLE Flight_Cost CASCADE CONSTRAINTS;
- DROP TABLE Service_Offering CASCADE CONSTRAINTS;
- DROP TABLE Flight_Service CASCADE CONSTRAINTS;
- DROP TABLE Seat_Details CASCADE CONSTRAINTS;
- DROP TABLE Travel_Class CASCADE CONSTRAINTS;
- DROP TABLE Flight_Details CASCADE CONSTRAINTS;
- DROP TABLE Airport CASCADE CONSTRAINTS;
- DROP TABLE Passenger CASCADE CONSTRAINTS;
-
-
-------------------------------------------------
--- 1. AIRPORT
-------------------------------------------------
-CREATE TABLE Airport (
-    Airport_ID      VARCHAR2(10)  PRIMARY KEY,
-    AirportCity     VARCHAR2(50)  NOT NULL,
-    AirportCountry  VARCHAR2(50)  NOT NULL
-);
-
-COMMENT ON TABLE Airport IS 'Master data for airports';
-COMMENT ON COLUMN Airport.Airport_ID IS 'Surrogate code for airport (e.g., LHE, DXB)';
-
-
-------------------------------------------------
--- 2. FLIGHT_DETAILS
-------------------------------------------------
-CREATE TABLE Flight_Details (
-    Flight_ID              VARCHAR2(10)  PRIMARY KEY,
-    Source_Airport_ID      VARCHAR2(10)  NOT NULL
-        REFERENCES Airport(Airport_ID),
-    Destination_Airport_ID VARCHAR2(10)  NOT NULL
-        REFERENCES Airport(Airport_ID),
-    Departure_Date_Time    DATE          NOT NULL,
-    Arrival_Date_Time      DATE          NOT NULL,
-    Airplane_Type          VARCHAR2(50)
-);
-
-COMMENT ON TABLE Flight_Details IS 'Individual flight legs between two airports';
-
-
-------------------------------------------------
--- 3. TRAVEL_CLASS
-------------------------------------------------
-CREATE TABLE Travel_Class (
-    Travel_Class_ID       VARCHAR2(10)  PRIMARY KEY,
-    Travel_Class_Name     VARCHAR2(50)  NOT NULL,
-    Travel_Class_Capacity NUMBER        NOT NULL
-);
-
-COMMENT ON TABLE Travel_Class IS 'Different cabin classes (Economy, Business, etc.)';
-
-
-------------------------------------------------
--- 4. SEAT_DETAILS
---    Seat is specific to (Flight, Row, Seat Letter, Class)
-------------------------------------------------
-CREATE TABLE Seat_Details (
-    Seat_ID         VARCHAR2(20)  PRIMARY KEY,
-    Travel_Class_ID VARCHAR2(10)  NOT NULL
-        REFERENCES Travel_Class(Travel_Class_ID),
-    Flight_ID       VARCHAR2(10)  NOT NULL
-        REFERENCES Flight_Details(Flight_ID),
-    Row_Number      NUMBER        NOT NULL,   -- 1..N
-    Seat_Letter     CHAR(1)       NOT NULL    -- A..F
-);
-
--- Avoid duplicate seats within same flight
-ALTER TABLE Seat_Details
-    ADD CONSTRAINT UQ_Flight_Row_Seat
-        UNIQUE (Flight_ID, Row_Number, Seat_Letter);
-
-COMMENT ON TABLE Seat_Details IS 'Physical seats on a specific flight, by row and seat letter';
-
-
-------------------------------------------------
--- 5. FLIGHT_SERVICE (EX: MEAL, WIFI, BAGGAGE)
-------------------------------------------------
-CREATE TABLE Flight_Service (
-    Service_ID   VARCHAR2(10)  PRIMARY KEY,
-    Service_Name VARCHAR2(50)  NOT NULL
-);
-
-COMMENT ON TABLE Flight_Service IS 'Catalog of services that can be offered in a class';
-
-
-------------------------------------------------
--- 6. SERVICE_OFFERING (WHICH CLASS OFFERS WHICH SERVICE, AND WHEN)
-------------------------------------------------
-CREATE TABLE Service_Offering (
-    Travel_Class_ID VARCHAR2(10) NOT NULL
-        REFERENCES Travel_Class(Travel_Class_ID),
-    Service_ID      VARCHAR2(10) NOT NULL
-        REFERENCES Flight_Service(Service_ID),
-    Offered_YN      CHAR(1)      NOT NULL
-        CHECK (Offered_YN IN ('Y','N')),
-    From_Date       DATE         NOT NULL,
-    To_Date         DATE,
-    CONSTRAINT PK_Service_Offering PRIMARY KEY (Travel_Class_ID, Service_ID, From_Date)
-);
-
-COMMENT ON TABLE Service_Offering IS 'Time-bound mapping of which services are offered in which class';
-
-
-------------------------------------------------
--- 7. FLIGHT_COST (TIME-DEPENDENT SEAT PRICING)
-------------------------------------------------
-CREATE TABLE Flight_Cost (
-    Seat_ID         VARCHAR2(20) NOT NULL
-        REFERENCES Seat_Details(Seat_ID),
-    Valid_From_Date DATE         NOT NULL,
-    Valid_To_Date   DATE,
-    Cost            NUMBER(10,2) NOT NULL,
-    CONSTRAINT PK_Flight_Cost PRIMARY KEY (Seat_ID, Valid_From_Date)
-);
-
-COMMENT ON TABLE Flight_Cost IS 'Historical cost of a seat over date ranges';
-
-
-------------------------------------------------
--- 8. PASSENGER (CNIC-BASED, FROM NEW DESIGN)
-------------------------------------------------
-CREATE TABLE Passenger (
-    CNIC           VARCHAR2(15)  PRIMARY KEY,
-    P_FirstName    VARCHAR2(50)  NOT NULL,
-    P_LastName     VARCHAR2(50)  NOT NULL,
-    P_Email        VARCHAR2(100),
-    P_PhoneNumber  VARCHAR2(20),
-    P_Address      VARCHAR2(200),
-    P_City         VARCHAR2(50),
-    P_State        VARCHAR2(50),
-    P_Zipcode      VARCHAR2(10),
-    P_Country      VARCHAR2(50),
-    Date_Of_Birth  DATE,
-    Gender         CHAR(1)       CHECK (Gender IN ('M', 'F', 'O')),
-    CONSTRAINT chk_cnic_format
-        CHECK (REGEXP_LIKE(CNIC, '^\d{5}-\d{7}-\d$'))
-);
-
-COMMENT ON TABLE Passenger IS 'Stores passenger information with CNIC as primary key';
-COMMENT ON COLUMN Passenger.CNIC IS 'Pakistani CNIC format: 12345-1234567-1';
-
-
-------------------------------------------------
--- 9. BOOKING (TOP-LEVEL PNR / ORDER)
-------------------------------------------------
-CREATE TABLE Booking (
-    Booking_ID           VARCHAR2(20)  PRIMARY KEY,
-    Lead_Passenger_CNIC  VARCHAR2(15)  NOT NULL
-        REFERENCES Passenger(CNIC),
-    Booking_Date         TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
-    Total_Amount         NUMBER(10,2)  DEFAULT 0 NOT NULL,
-    Booking_Status       VARCHAR2(20)  DEFAULT 'CONFIRMED'
-        CHECK (Booking_Status IN ('CONFIRMED', 'CANCELLED', 'COMPLETED')),
-    Pay_Option           VARCHAR2(20)
-        CHECK (Pay_Option IN ('PAY_NOW', 'PAY_LATER')),
-    Trip_Type            VARCHAR2(10)
-        CHECK (Trip_Type IN ('ONE_WAY', 'ROUND_TRIP'))
-);
-
-COMMENT ON TABLE Booking IS 'Groups multiple passengers and flights into one booking (PNR)';
-COMMENT ON COLUMN Booking.Lead_Passenger_CNIC IS 'Main contact / owner of booking';
-
-
-------------------------------------------------
--- 10. PAYMENT (NORMALIZED OUT OF BOOKING / OLD PAYMENT_STATUS)
-------------------------------------------------
-CREATE TABLE Payment (
-    Payment_ID      VARCHAR2(20) PRIMARY KEY,
-    Booking_ID      VARCHAR2(20) NOT NULL
-        REFERENCES Booking(Booking_ID) ON DELETE CASCADE,
-    Payment_Amount  NUMBER(10,2) NOT NULL,
-    Payment_Due_Date DATE,
-    Payment_Status  VARCHAR2(20) NOT NULL
-        CHECK (Payment_Status IN ('UNPAID','PAID','REFUNDED','CANCELLED')),
-    Payment_Method  VARCHAR2(50),
-    Payment_Date    TIMESTAMP
-);
-
-COMMENT ON TABLE Payment IS 'Payment records for bookings (can support partial/multiple payments)';
-
-
-------------------------------------------------
--- 11. RESERVATION (PASSENGER x SEAT UNDER A BOOKING)
---     NOTE: Flight_ID is NOT stored here to avoid redundancy;
---           it can be derived via Seat_Details -> Flight_Details.
-------------------------------------------------
-CREATE TABLE Reservation (
-    Reservation_ID      VARCHAR2(20) PRIMARY KEY,
-    Booking_ID          VARCHAR2(20) NOT NULL
-        REFERENCES Booking(Booking_ID) ON DELETE CASCADE,
-    Passenger_CNIC      VARCHAR2(15) NOT NULL
-        REFERENCES Passenger(CNIC),
-    Seat_ID             VARCHAR2(20) NOT NULL
-        REFERENCES Seat_Details(Seat_ID),
-    Date_Of_Reservation TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
-    Reservation_Status  VARCHAR2(20)  DEFAULT 'ACTIVE'
-        CHECK (Reservation_Status IN ('ACTIVE', 'CANCELLED', 'CHANGED')),
-    Seat_Cost           NUMBER(10,2)  NOT NULL,
-    Is_Outbound         CHAR(1)       DEFAULT 'Y'
-        CHECK (Is_Outbound IN ('Y','N')),
-    CONSTRAINT uq_booking_seat UNIQUE (Booking_ID, Seat_ID)
-);
-
-COMMENT ON TABLE Reservation IS 'One passenger on one seat, belonging to a booking';
-COMMENT ON COLUMN Reservation.Is_Outbound IS 'Y = outbound leg, N = return leg';
-
-
-------------------------------------------------
--- 12. CANCELLATION_LOG (AUDIT FOR CANCELLATIONS)
-------------------------------------------------
-CREATE TABLE Cancellation_Log (
-    Cancellation_ID     VARCHAR2(20) PRIMARY KEY,
-    Booking_ID          VARCHAR2(20) NOT NULL
-        REFERENCES Booking(Booking_ID),
-    Cancellation_Date   TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
-    Cancelled_By_CNIC   VARCHAR2(15)  NOT NULL
-        REFERENCES Passenger(CNIC),
-    Reason              VARCHAR2(500),
-    Original_Amount     NUMBER(10,2),
-    Refund_Eligible     CHAR(1)       DEFAULT 'N'
-        CHECK (Refund_Eligible IN ('Y','N')),
-    Hours_Since_Booking NUMBER
-);
-
-COMMENT ON TABLE Cancellation_Log IS 'Audit trail for booking cancellations';
-
-
-------------------------------------------------
--- 13. FLIGHT_CHANGE_LOG (AUDIT FOR CHANGES)
---     We log seat changes; flight can be derived via Seat_Details.
-------------------------------------------------
-CREATE TABLE Flight_Change_Log (
-    Change_ID        VARCHAR2(20) PRIMARY KEY,
-    Booking_ID       VARCHAR2(20) NOT NULL
-        REFERENCES Booking(Booking_ID),
-    Change_Date      TIMESTAMP    DEFAULT SYSTIMESTAMP NOT NULL,
-    Changed_By_CNIC  VARCHAR2(15) NOT NULL
-        REFERENCES Passenger(CNIC),
-    Old_Seat_ID      VARCHAR2(20),
-    New_Seat_ID      VARCHAR2(20),
-    Price_Difference NUMBER(10,2),
-    Change_Fee       NUMBER(10,2) DEFAULT 0
-);
-
-COMMENT ON TABLE Flight_Change_Log IS 'Audit trail for seat changes within a booking';
-
-
-------------------------------------------------
--- 14. FINAL MESSAGE
-------------------------------------------------
+-- Drop existing user objects (excluding system-generated sequences)
 BEGIN
-    DBMS_OUTPUT.PUT_LINE('===========================================');
-    DBMS_OUTPUT.PUT_LINE('Unified 3NF schema created successfully');
-    DBMS_OUTPUT.PUT_LINE('===========================================');
+    FOR t IN (SELECT table_name FROM user_tables) LOOP
+        EXECUTE IMMEDIATE 'DROP TABLE ' || t.table_name || ' CASCADE CONSTRAINTS';
+    END LOOP;
 END;
 /
 
-COMMIT;
+BEGIN
+    FOR s IN (SELECT sequence_name FROM user_sequences WHERE sequence_name NOT LIKE '%$%') LOOP
+        EXECUTE IMMEDIATE 'DROP SEQUENCE ' || s.sequence_name;
+    END LOOP;
+END;
+/
+
+BEGIN
+    FOR trg IN (SELECT trigger_name FROM user_triggers) LOOP
+        EXECUTE IMMEDIATE 'DROP TRIGGER ' || trg.trigger_name;
+    END LOOP;
+END;
+/
+
+--------------------------------------------------------------------------------
+-- 1. GEOGRAPHIC & AIRPORT MASTER DATA
+--------------------------------------------------------------------------------
+CREATE TABLE Country (
+    Country_ID    NUMBER PRIMARY KEY,
+    Country_Name  VARCHAR2(50) NOT NULL UNIQUE
+);
+
+CREATE TABLE State_Province (
+    State_ID      NUMBER PRIMARY KEY,
+    State_Name    VARCHAR2(50) NOT NULL,
+    Country_ID    NUMBER NOT NULL REFERENCES Country(Country_ID),
+    CONSTRAINT UQ_State_Country UNIQUE (State_Name, Country_ID)
+);
+
+CREATE TABLE City (
+    City_ID       NUMBER PRIMARY KEY,
+    City_Name     VARCHAR2(50) NOT NULL,
+    State_ID      NUMBER NOT NULL REFERENCES State_Province(State_ID),
+    CONSTRAINT UQ_City_State UNIQUE (City_Name, State_ID)
+);
+
+CREATE TABLE Zip_Master (
+    Zipcode       VARCHAR2(10) PRIMARY KEY,
+    City_ID       NUMBER NOT NULL REFERENCES City(City_ID)
+);
+
+CREATE TABLE Airport (
+    Airport_ID    VARCHAR2(10) PRIMARY KEY, -- IATA Code (e.g., JFK)
+    Airport_Name  VARCHAR2(100) NOT NULL,
+    Zipcode       VARCHAR2(10) REFERENCES Zip_Master(Zipcode)
+);
+
+--------------------------------------------------------------------------------
+-- 2. AIRCRAFT & SEAT CONFIGURATION
+--------------------------------------------------------------------------------
+CREATE TABLE Aircraft_Model (
+    Model_ID      VARCHAR2(20) PRIMARY KEY, -- e.g., B737-800
+    Model_Name    VARCHAR2(100) NOT NULL,
+    Manufacturer  VARCHAR2(50)
+);
+
+CREATE TABLE Travel_Class (
+    Class_ID      VARCHAR2(10) PRIMARY KEY, -- e.g., ECO, BUS
+    Class_Name    VARCHAR2(50) NOT NULL
+);
+
+-- Intersect Table: Defines which rows belong to which class on a specific plane
+CREATE TABLE Aircraft_Row_Class (
+    Model_ID      VARCHAR2(20) NOT NULL REFERENCES Aircraft_Model(Model_ID),
+    Row_Number    NUMBER NOT NULL,
+    Class_ID      VARCHAR2(10) NOT NULL REFERENCES Travel_Class(Class_ID),
+    CONSTRAINT PK_Row_Class PRIMARY KEY (Model_ID, Row_Number),
+    CONSTRAINT CK_Row_Pos CHECK (Row_Number > 0)
+);
+
+-- Detail Table: Specific seats (A, B, C) in a row
+CREATE TABLE Aircraft_Seat_Map (
+    Model_ID      VARCHAR2(20) NOT NULL,
+    Row_Number    NUMBER NOT NULL,
+    Seat_Letter   CHAR(1) NOT NULL,
+    CONSTRAINT PK_Seat_Map PRIMARY KEY (Model_ID, Row_Number, Seat_Letter),
+    CONSTRAINT FK_Seat_Row FOREIGN KEY (Model_ID, Row_Number)
+        REFERENCES Aircraft_Row_Class(Model_ID, Row_Number)
+);
+
+--------------------------------------------------------------------------------
+-- 3. FLIGHT OPERATIONS & PRICING
+--------------------------------------------------------------------------------
+CREATE TABLE Flight_Route (
+    Route_ID       VARCHAR2(10) PRIMARY KEY,
+    Source_Airport VARCHAR2(10) NOT NULL REFERENCES Airport(Airport_ID),
+    Dest_Airport   VARCHAR2(10) NOT NULL REFERENCES Airport(Airport_ID),
+    Base_Duration  NUMBER, -- Minutes
+    CONSTRAINT CK_Diff_Airports CHECK (Source_Airport <> Dest_Airport)
+);
+
+--------------------------------------------------------------------------------
+-- 4. SERVICES & OFFERINGS
+--------------------------------------------------------------------------------
+CREATE TABLE Flight_Service (
+    Service_ID    VARCHAR2(10) PRIMARY KEY, -- e.g., WIFI
+    Service_Name  VARCHAR2(50) NOT NULL
+);
+
+-- Logic: Services are defined by the ROUTE and CLASS.
+CREATE TABLE Service_Offering (
+    Route_ID         VARCHAR2(10) NOT NULL REFERENCES Flight_Route(Route_ID),
+    Class_ID         VARCHAR2(10) NOT NULL REFERENCES Travel_Class(Class_ID),
+    Service_ID       VARCHAR2(10) NOT NULL REFERENCES Flight_Service(Service_ID),
+    
+    -- Temporal Validity (Service availability changes over time)
+    Valid_From       DATE NOT NULL,
+    Valid_To         DATE, -- Nullable means "Indefinitely valid"
+    
+    Is_Complimentary CHAR(1) DEFAULT 'Y' CHECK (Is_Complimentary IN ('Y', 'N')),
+    Cost_If_Paid     NUMBER(10, 2) DEFAULT 0 CHECK (Cost_If_Paid >= 0),
+    
+    -- PRIMARY KEY MUST INCLUDE Valid_From to allow historical records
+    CONSTRAINT PK_Route_Service PRIMARY KEY (Route_ID, Class_ID, Service_ID, Valid_From),
+    
+    -- Logical Rule: End date must be after start date
+    CONSTRAINT CK_Service_Dates CHECK (Valid_To IS NULL OR Valid_To >= Valid_From)
+);
+
+CREATE TABLE Route_Pricing (
+    Pricing_ID     NUMBER PRIMARY KEY,
+    Route_ID       VARCHAR2(10) NOT NULL REFERENCES Flight_Route(Route_ID),
+    Class_ID       VARCHAR2(10) NOT NULL REFERENCES Travel_Class(Class_ID),
+    Valid_From     DATE NOT NULL,
+    Valid_To       DATE NOT NULL,
+    Base_Price     NUMBER(10, 2) NOT NULL CHECK (Base_Price >= 0),
+    CONSTRAINT CK_Pricing_Dates CHECK (Valid_To >= Valid_From)
+);
+
+CREATE TABLE Flight_Instance (
+    Instance_ID    VARCHAR2(20) PRIMARY KEY, -- e.g., FL101-20241010
+    Route_ID       VARCHAR2(10) NOT NULL REFERENCES Flight_Route(Route_ID),
+    Model_ID       VARCHAR2(20) NOT NULL REFERENCES Aircraft_Model(Model_ID),
+    Departure_Time TIMESTAMP NOT NULL,
+    Arrival_Time   TIMESTAMP NOT NULL,
+    Flight_Status  VARCHAR2(20) DEFAULT 'SCHEDULED' 
+                   CHECK (Flight_Status IN ('SCHEDULED','DELAYED','CANCELLED','LANDED')),
+    CONSTRAINT CK_Arrival_After_Dep CHECK (Arrival_Time > Departure_Time)
+);
+
+-- APP USER (The Account Holder)
+-- This table handles authentication and login sessions.
+-- It is distinct from the Passenger table (Physical Traveler).
+CREATE TABLE App_User (
+    User_ID        NUMBER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    Email          VARCHAR2(100) NOT NULL UNIQUE, -- Serves as the Login ID
+    Password_Hash  VARCHAR2(256) NOT NULL,        -- Security best practice: Store hash, not text
+    Phone_Number   VARCHAR2(20),
+    Created_At     TIMESTAMP DEFAULT SYSTIMESTAMP,
+    
+    -- Basic email validation check
+    CONSTRAINT CK_User_Email CHECK (Email LIKE '%@%.%')
+);
+
+--------------------------------------------------------------------------------
+-- 5. BOOKING & PNR SYSTEM
+--------------------------------------------------------------------------------
+
+-- BOOKING (The Transaction)
+-- Represents the financial "Folder" or PNR containing the trip details.
+CREATE TABLE Booking (
+    Booking_ID       VARCHAR2(6) PRIMARY KEY, -- The PNR (e.g., 'A7F3E9')
+    
+    -- THE FINANCIAL OWNER (Lead User):
+    -- This is who logged in to make the booking.
+    -- Even if they aren't flying, they own the record.
+    Lead_User_ID     NUMBER REFERENCES App_User(User_ID) ON DELETE SET NULL,
+    
+    Booking_Date     TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
+    Booking_Status   VARCHAR2(20) DEFAULT 'CONFIRMED' 
+                     CHECK (Booking_Status IN ('CONFIRMED','CANCELLED','COMPLETED')),
+    
+    -- Contact details specific to THIS trip (in case User profile email is old)
+    Contact_Email    VARCHAR2(100) NOT NULL,
+    Emergency_Phone  VARCHAR2(20)
+);
+
+
+-- PASSENGER (The Person Profile)
+-- This represents a human being. It is NOT a snapshot per flight.
+-- It is a reusable profile linked to an App_User (if they have an account).
+CREATE SEQUENCE Passenger_Seq START WITH 1 INCREMENT BY 1;
+
+CREATE TABLE Passenger (
+    Passenger_ID   NUMBER DEFAULT Passenger_Seq.NEXTVAL PRIMARY KEY,
+    
+    -- THE CRITICAL LINK:
+    -- If NULL: This is a Guest/Child/Dependent without their own account.
+    -- If NOT NULL: This passenger IS that App_User.
+    -- UNIQUE ensures one User cannot have multiple "Self" profiles.
+    Linked_User_ID NUMBER UNIQUE REFERENCES App_User(User_ID) ON DELETE SET NULL,
+    
+    -- Core Demographics
+    Title          VARCHAR2(10) CHECK (Title IN ('MR', 'MS', 'MRS', 'DR', 'MX', 'CHD', 'INF')),
+    First_Name     VARCHAR2(50) NOT NULL,
+    Last_Name      VARCHAR2(50) NOT NULL,
+    Gender         VARCHAR2(20) CHECK (Gender IN ('MALE', 'FEMALE', 'OTHER')),
+    Nationality    VARCHAR2(50) NOT NULL,
+    Date_Of_Birth  DATE NOT NULL,
+    
+    -- Passport Logic: 
+    -- Unique ensures we don't accidentally create duplicate profiles for the same person.
+    -- LIKELY NOT NEEDED
+    Passport_Num   VARCHAR2(20)
+);
+
+--------------------------------------------------------------------------------
+-- 6. RESERVATION & TRANSACTIONS
+--------------------------------------------------------------------------------
+
+-- RESERVATION (The Junction / Ticket)
+-- Connects a Person (Passenger) to a Trip (Instance) within a Folder (Booking).
+CREATE TABLE Reservation (
+    Reservation_ID VARCHAR2(20) PRIMARY KEY, -- Ticket Number
+    
+    -- Relationships
+    Booking_ID     VARCHAR2(6) NOT NULL REFERENCES Booking(Booking_ID),
+    Passenger_ID   NUMBER NOT NULL REFERENCES Passenger(Passenger_ID),
+    Instance_ID    VARCHAR2(20) NOT NULL REFERENCES Flight_Instance(Instance_ID),
+    
+    -- Seat Assignment
+    -- NULL = Infant (On Lap) or Pending Assignment.
+    Row_Number     NUMBER,
+    Seat_Letter    CHAR(1),
+    Price_Charged  NUMBER(10, 2) NOT NULL CHECK (Price_Charged >= 0),
+    
+    Ticket_Status  VARCHAR2(20) DEFAULT 'ISSUED'
+                   CHECK (Ticket_Status IN ('ISSUED', 'CHECKED_IN', 'BOARDED', 'NO_SHOW', 'CANCELLED')),
+
+    -- LOGICAL RULES:
+    -- Unique Constraint handles NULLs intelligently in Oracle.
+    -- It prevents two people from having "Row 10, Seat A".
+    -- But it allows multiple Infants to have "NULL, NULL" (because NULL != NULL).
+
+    -- 1. No Double Booking: A seat on a specific flight can only be held once.
+    CONSTRAINT UQ_Seat_Instance UNIQUE (Instance_ID, Row_Number, Seat_Letter),
+    
+    -- 2. No Duplicate Traveler: The same person cannot be on the same flight twice.
+    CONSTRAINT UQ_Pass_Instance UNIQUE (Passenger_ID, Instance_ID)
+);
+
+CREATE TABLE Payment (
+    Payment_ID     VARCHAR2(20) PRIMARY KEY,
+    Booking_ID     VARCHAR2(6) NOT NULL REFERENCES Booking(Booking_ID),
+    Amount_Paid    NUMBER(10, 2) NOT NULL CHECK (Amount_Paid >= 0),
+    Payment_Date   TIMESTAMP DEFAULT SYSTIMESTAMP,
+    Payment_Method VARCHAR2(50)
+);
+
+CREATE TABLE Cancellation_Log (
+    Log_ID         NUMBER PRIMARY KEY,
+    Booking_ID     VARCHAR2(6) NOT NULL REFERENCES Booking(Booking_ID),
+    Cancel_Date    TIMESTAMP DEFAULT SYSTIMESTAMP,
+    Reason         VARCHAR2(255)
+);
+
+--------------------------------------------------------------------------------
+-- 7. BUSINESS LOGIC (Triggers)
+--------------------------------------------------------------------------------
+
+-- A. PNR Generator (Random 6-character Alphanumeric String)
+CREATE OR REPLACE FUNCTION Generate_PNR RETURN VARCHAR2 IS
+    v_pnr VARCHAR2(6);
+    v_count NUMBER;
+    c_chars CONSTANT VARCHAR2(36) := '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+BEGIN
+    LOOP
+        v_pnr := '';
+        FOR i IN 1..6 LOOP
+            v_pnr := v_pnr || SUBSTR(c_chars, ROUND(DBMS_RANDOM.VALUE(1, 36)), 1);
+        END LOOP;
+        SELECT COUNT(*) INTO v_count FROM Booking WHERE Booking_ID = v_pnr;
+        EXIT WHEN v_count = 0;
+    END LOOP;
+    RETURN v_pnr;
+END;
+/
+
+CREATE OR REPLACE TRIGGER TRG_Generate_Booking_PNR
+BEFORE INSERT ON Booking
+FOR EACH ROW
+BEGIN
+    IF :NEW.Booking_ID IS NULL THEN
+        :NEW.Booking_ID := Generate_PNR();
+    END IF;
+END;
+/
+
+-- B. Ghost Seat Prevention (Verify seat exists on the specific Aircraft Model)
+CREATE OR REPLACE TRIGGER TRG_Verify_Seat_Exists
+BEFORE INSERT OR UPDATE ON Reservation
+FOR EACH ROW
+DECLARE
+    v_Model_ID VARCHAR2(20);
+    v_Count    NUMBER;
+BEGIN
+    -- 1. Find the aircraft model used for this flight instance
+    SELECT Model_ID INTO v_Model_ID
+    FROM Flight_Instance
+    WHERE Instance_ID = :NEW.Instance_ID;
+
+    -- 2. Check if that seat exists in the map for that model
+    SELECT COUNT(*) INTO v_Count
+    FROM Aircraft_Seat_Map
+    WHERE Model_ID = v_Model_ID
+      AND Row_Number = :NEW.Row_Number
+      AND Seat_Letter = :NEW.Seat_Letter;
+
+    IF v_Count = 0 THEN
+        RAISE_APPLICATION_ERROR(-20002, 'Invalid Seat: This seat does not exist on the scheduled aircraft.');
+    END IF;
+END;
+/
+
+-- This Trigger solves your fear about "No link to seats." It acts as a Virtual Foreign Key. Before any reservation is saved, it checks: "Does this seat actually exist on this specific airplane model?"
+CREATE OR REPLACE TRIGGER TRG_Validate_Seat_Exists
+BEFORE INSERT OR UPDATE ON Reservation
+FOR EACH ROW
+DECLARE
+    v_Model_ID VARCHAR2(20);
+    v_Count    NUMBER;
+BEGIN
+    -- 1. If it's an Infant (NULL seat), skip validation. It's always valid.
+    IF :NEW.Row_Number IS NULL THEN
+        RETURN;
+    END IF;
+
+    -- 2. Find out which Aircraft Model is being used for this Flight Instance
+    SELECT Model_ID INTO v_Model_ID
+    FROM Flight_Instance
+    WHERE Instance_ID = :NEW.Instance_ID;
+
+    -- 3. Check if the requested Seat exists in the Seat Map for that Model
+    SELECT COUNT(*) INTO v_Count
+    FROM Aircraft_Seat_Map
+    WHERE Model_ID = v_Model_ID
+      AND Row_Number = :NEW.Row_Number
+      AND Seat_Letter = :NEW.Seat_Letter;
+
+    -- 4. If count is 0, the seat does not exist physically. REJECT IT.
+    IF v_Count = 0 THEN
+        RAISE_APPLICATION_ERROR(-20010, 
+            'Invalid Seat Selection: Row ' || :NEW.Row_Number || 
+            ' Seat ' || :NEW.Seat_Letter || 
+            ' does not exist on aircraft ' || v_Model_ID);
+    END IF;
+END;
+/
+
+-- Keeping Counts (For Display): Do NOT add a column like Seats_Remaining to the Flight_Instance table. That violates 3NF (because it is a calculated value derived from other tables). If you store it, it will eventually get out of sync.
+
+-- Instead, create a VIEW. This acts like a virtual table that calculates availability live.
+CREATE OR REPLACE VIEW View_Flight_Availability AS
+SELECT 
+    F.Instance_ID,
+    F.Route_ID,
+    F.Departure_Time,
+    
+    -- 1. Get Total Capacity (Count seats in the aircraft model)
+    (SELECT COUNT(*) FROM Aircraft_Seat_Map WHERE Model_ID = F.Model_ID) AS Total_Capacity,
+    
+    -- 2. Get Booked Seats (Count rows in Reservation where seat is not null)
+    (SELECT COUNT(*) FROM Reservation WHERE Instance_ID = F.Instance_ID AND Row_Number IS NOT NULL) AS Seats_Booked,
+    
+    -- 3. Calculate Remaining
+    (SELECT COUNT(*) FROM Aircraft_Seat_Map WHERE Model_ID = F.Model_ID) - 
+    (SELECT COUNT(*) FROM Reservation WHERE Instance_ID = F.Instance_ID AND Row_Number IS NOT NULL) AS Seats_Remaining
+
+FROM Flight_Instance F;
+
+-- 2. Handling Skipped Seat Selection (The "Random" Solution)
+-- Should you assign a random seat? YES. If an adult passenger skips selection, you should auto-assign a seat immediately. Leaving it NULL (Pending) creates operational headaches later (e.g., overbooking, family separation at the gate).
+
+-- How to implement this: Do not do this in your Java/Python code. It is too slow. Use a PL/SQL Procedure.
+
+-- This procedure represents the "Smart Booking Logic." It says: "If they picked a seat, try to give it to them. If they didn't, find a random empty one."
+CREATE OR REPLACE PROCEDURE USP_Make_Reservation (
+    p_Booking_ID   IN VARCHAR2,
+    p_Passenger_ID IN NUMBER,
+    p_Instance_ID  IN VARCHAR2,
+    p_Req_Row      IN NUMBER DEFAULT NULL,   -- User's choice (Optional)
+    p_Req_Seat     IN CHAR DEFAULT NULL      -- User's choice (Optional)
+) AS
+    v_Final_Row  NUMBER;
+    v_Final_Seat CHAR(1);
+    v_Title      VARCHAR2(10);
+BEGIN
+    -- 1. Check if Passenger is an Infant (Infants MUST be NULL/Lap)
+    SELECT Title INTO v_Title FROM Passenger WHERE Passenger_ID = p_Passenger_ID;
+    
+    IF v_Title IN ('INF', 'CHD') THEN
+        v_Final_Row := NULL;
+        v_Final_Seat := NULL;
+        
+    -- 2. If User SELECTED a seat manually
+    ELSIF p_Req_Row IS NOT NULL AND p_Req_Seat IS NOT NULL THEN
+        v_Final_Row := p_Req_Row;
+        v_Final_Seat := p_Req_Seat;
+        
+    -- 3. If User SKIPPED SELECTION (Auto-Assign Random)
+    ELSE
+        BEGIN
+            SELECT Row_Number, Seat_Letter
+            INTO v_Final_Row, v_Final_Seat
+            FROM (
+                -- A. Get ALL seats on this plane model
+                SELECT S.Row_Number, S.Seat_Letter
+                FROM Flight_Instance F
+                JOIN Aircraft_Seat_Map S ON F.Model_ID = S.Model_ID
+                WHERE F.Instance_ID = p_Instance_ID
+                
+                MINUS -- B. Subtract seats ALREADY BOOKED on this flight
+                
+                SELECT Row_Number, Seat_Letter
+                FROM Reservation
+                WHERE Instance_ID = p_Instance_ID
+                  AND Row_Number IS NOT NULL
+            )
+            -- C. Randomize and pick the first one
+            ORDER BY DBMS_RANDOM.VALUE
+            FETCH FIRST 1 ROW ONLY;
+            
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                RAISE_APPLICATION_ERROR(-20020, 'Flight is fully booked! Cannot auto-assign.');
+        END;
+    END IF;
+
+    -- 4. Insert the Reservation
+    INSERT INTO Reservation (
+        Reservation_ID, Booking_ID, Passenger_ID, Instance_ID, 
+        Row_Number, Seat_Letter, Price_Charged, Ticket_Status
+    ) VALUES (
+        'RES' || round(DBMS_RANDOM.VALUE(10000,99999)), -- Simple ID generation
+        p_Booking_ID, p_Passenger_ID, p_Instance_ID, 
+        v_Final_Row, v_Final_Seat, 150.00, 'ISSUED'
+    );
+
+    COMMIT;
+END;
+/

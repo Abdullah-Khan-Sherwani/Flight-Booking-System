@@ -1,9 +1,4 @@
 <!DOCTYPE HTML>
-<!--
-	Traveler by freehtml5.co
-	Twitter: http://twitter.com/fh5co
-	URL: http://freehtml5.co
--->
 <html>
 	<head>
 	<meta charset="utf-8">
@@ -86,6 +81,13 @@
 			margin-top: 0 !important;
 			margin-bottom: 20px !important;
 		}
+
+		/* FIX NAVIGATION POSITION - match original Y level and move right */
+		.col-xs-8.text-right.menu-1 {
+			position: relative;
+			right: -100px; /* Move to the right - adjust this value as needed */
+			top: 0; /* Keep original vertical position */
+		}
 	</style>
 
 	<!-- Modernizr JS -->
@@ -103,13 +105,12 @@
 	<div id="page">
 
 	
-	<!-- <div class="page-inner"> -->
+	<!-- Replace the existing navigation in index.html with this -->
 	<nav class="gtco-nav" role="navigation">
 		<div class="gtco-container">
-			
 			<div class="row">
 				<div class="col-sm-4 col-xs-12">
-					<div id="gtco-logo"><a href="{{ url_for('home') }}">IAT Airlines <em>.</em></a></div>
+					<div id="gtco-logo"><a href="{{ url_for('dashboard') }}">IAT Airlines <em>.</em></a></div>
 				</div>
 				<div class="col-xs-8 text-right menu-1">
 					<ul>
@@ -124,10 +125,30 @@
 						</li>
 						<li><a href="{{ url_for('pricing') }}">Fares</a></li>
 						<li><a href="{{ url_for('contact') }}">Contact</a></li>
+						
+						<!-- User Profile Section - MOVED TO THE RIGHT -->
+						{% if session.user_first_name %}
+						<li class="has-dropdown">
+							<a href="#">
+								<div style="display: inline-flex; align-items: center;">
+									<div style="width: 32px; height: 32px; background: linear-gradient(135deg, #2c3e50, #3498db); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 14px; margin-right: 8px;">
+										{{ session.user_first_name[0]|upper }}
+									</div>
+									{{ session.user_first_name }}
+								</div>
+							</a>
+							<ul class="dropdown">
+								<li><a href="{{ url_for('account_info') }}">Account</a></li>
+								<li><a href="{{ url_for('manage_bookings') }}">My Bookings</a></li>
+								<li><a href="{{ url_for('logout') }}">Logout</a></li>
+							</ul>
+						</li>
+						{% else %}
+						<li><a href="{{ url_for('login') }}">Login</a></li>
+						{% endif %}
 					</ul>	
 				</div>
 			</div>
-			
 		</div>
 	</nav>
 	

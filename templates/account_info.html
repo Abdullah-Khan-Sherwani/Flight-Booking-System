@@ -1,0 +1,398 @@
+<!DOCTYPE HTML>
+<html>
+	<head>
+	<meta charset="utf-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<title>Account Information - IAT Airlines</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="description" content="Your account information and booking history" />
+	<meta name="keywords" content="account, profile, bookings, flights" />
+	<meta name="author" content="IAT Airlines" />
+
+	<link href="https://fonts.googleapis.com/css?family=Lato:300,400,700" rel="stylesheet">
+	
+	<!-- Animate.css -->
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/animate.css') }}">
+	<!-- Icomoon Icon Fonts-->
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/icomoon.css') }}">
+	<!-- Themify Icons-->
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/themify-icons.css') }}">
+	<!-- Bootstrap  -->
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.css') }}">
+
+	<!-- Magnific Popup -->
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/magnific-popup.css') }}">
+
+	<!-- Owl Carousel  -->
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/owl.carousel.min.css') }}">
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/owl.theme.default.min.css') }}">
+
+	<!-- Theme style  -->
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+	<!-- Modernizr JS -->
+	<script src="{{ url_for('static', filename='js/modernizr-2.6.2.min.js') }}"></script>
+
+	<style>
+        /* Make the entire page background the image */
+        body {
+            background-image: url("{{ url_for('static', filename='images/img_bg_2.jpg') }}");
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+            position: relative;
+        }
+        
+        /* Add overlay to entire page */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: -1;
+        }
+        
+        #page {
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Make navigation logo white */
+        #gtco-logo a {
+            color: white !important;
+        }
+
+        .account-container {
+            padding: 50px 0;
+            min-height: 100vh;
+        }
+        .account-card {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            padding: 40px 30px 30px;
+            margin-bottom: 30px;
+        }
+        .profile-header {
+            text-align: center;
+            margin-bottom: 50px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #f1f1f1;
+        }
+        .profile-avatar {
+            width: 100px;
+            height: 100px;
+            background: linear-gradient(135deg, #2c3e50, #3498db);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 36px;
+            font-weight: bold;
+            margin: 0 auto 15px;
+        }
+        .info-section {
+            margin-bottom: 25px;
+        }
+        .info-section h4 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        .info-row {
+            display: flex;
+            margin-bottom: 10px;
+            padding: 8px 0;
+        }
+        .info-label {
+            font-weight: 600;
+            color: #555;
+            width: 150px;
+            flex-shrink: 0;
+        }
+        .info-value {
+            color: #333;
+            flex-grow: 1;
+        }
+        .stats-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+            margin-bottom: 40px;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+        
+        /* Remove the separate header background since entire page has it */
+        .account-header {
+            padding: 80px 0 40px 0;
+            color: white;
+            text-align: center;
+            background: transparent !important; /* Force transparent background */
+            position: relative;
+            z-index: 2;
+        }
+
+        .account-header h1 {
+            font-size: 3em;
+            margin-bottom: 10px;
+            font-weight: 700;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            color: white !important; /* Force white color */
+        }
+
+        .account-header p {
+            font-size: 1.5em;
+            margin-bottom: 0;
+            opacity: 0.9;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+        }
+
+        /* Move only AAP KY GHAR TAK text down */
+        .account-header .gtco-container .row .col-md-12 h1 {
+            margin-top: 40px; /* Adjust this value as needed */
+            color: white !important;
+            font-size: 3em;
+            font-weight: 700;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        
+        /* Make footer text white for better contrast */
+        footer {
+            color: white;
+        }
+        footer .copyright {
+            color: white;
+        }
+
+        /* Move navigation menu to the right */
+        .col-xs-8.text-right.menu-1 {
+            position: relative;
+            right: -100px; /* Move to the right */
+            top: 0; /* Keep original vertical position */
+        }
+
+    </style>
+
+	<!-- FOR IE9 below -->
+	<!--[if lt IE 9]>
+	<script src="{{ url_for('static', filename='js/respond.min.js') }}"></script>
+	<![endif]-->
+
+	</head>
+	<body>
+		
+	<div class="gtco-loader"></div>
+	
+	<div id="page">
+
+	<!-- Navigation -->
+	<nav class="gtco-nav" role="navigation">
+		<div class="gtco-container">
+			<div class="row">
+				<div class="col-sm-4 col-xs-12">
+					<div id="gtco-logo"><a href="{{ url_for('dashboard') }}">IAT Airlines <em>.</em></a></div>
+				</div>
+				<div class="col-xs-8 text-right menu-1">
+					<ul>
+						<li><a href="{{ url_for('manage_bookings') }}">Manage Bookings</a></li>
+						<li class="has-dropdown">
+							<a href="#">Book Travel</a>
+							<ul class="dropdown">
+								<li><a href="#">One Way</a></li>
+								<li><a href="#">Round Trip</a></li>
+								<li><a href="#">Multi City</a></li>
+							</ul>
+						</li>
+						<li><a href="{{ url_for('pricing') }}">Fares</a></li>
+						<li><a href="{{ url_for('contact') }}">Contact</a></li>
+						
+						<!-- User Profile Section -->
+						{% if session.user_first_name %}
+						<li class="has-dropdown">
+							<a href="#">
+								<div style="display: inline-flex; align-items: center;">
+									<div style="width: 32px; height: 32px; background: linear-gradient(135deg, #2c3e50, #3498db); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 14px; margin-right: 8px;">
+										{{ session.user_first_name[0]|upper }}
+									</div>
+									{{ session.user_first_name }}
+								</div>
+							</a>
+							<ul class="dropdown">
+								<li><a href="{{ url_for('account_info') }}">Account</a></li>
+								<li><a href="{{ url_for('manage_bookings') }}">My Bookings</a></li>
+								<li><a href="{{ url_for('logout') }}">Logout</a></li>
+							</ul>
+						</li>
+						{% else %}
+						<li><a href="{{ url_for('login') }}">Login</a></li>
+						{% endif %}
+					</ul>	
+				</div>
+			</div>
+		</div>
+	</nav>
+
+	<!-- Header with branding -->
+	<div class="account-header">
+		<div class="gtco-container">
+			<div class="row">
+				<div class="col-md-12 text-center">
+					<h1>AAP KY GHAR TAK</h1>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="account-container">
+		<div class="gtco-container">
+			<div class="row">
+				<div class="col-md-8 col-md-offset-2">
+					<div class="account-card">
+						<div class="profile-header">
+							<div class="profile-avatar">
+								{{ account_info.first_name[0]|upper }}{{ account_info.last_name[0]|upper }}
+							</div>
+							<h2>{{ account_info.first_name }} {{ account_info.last_name }}</h2>
+							<p class="text-muted">Member since {{ account_info.created_at }}</p>
+						</div>
+
+						<!-- Account Statistics -->
+						<div class="stats-container">
+							<div class="stat-card">
+								<div class="stat-number">{{ account_info.booking_count }}</div>
+								<div class="stat-label">Total Bookings</div>
+							</div>
+							<div class="stat-card">
+								<div class="stat-number">{{ account_info.upcoming_flights }}</div>
+								<div class="stat-label">Upcoming Flights</div>
+							</div>
+						</div>
+
+						<!-- Personal Information -->
+						<div class="info-section">
+							<h4>Personal Information</h4>
+							<div class="info-row">
+								<div class="info-label">Title:</div>
+								<div class="info-value">{{ account_info.title }}</div>
+							</div>
+							<div class="info-row">
+								<div class="info-label">Full Name:</div>
+								<div class="info-value">{{ account_info.first_name }} {{ account_info.last_name }}</div>
+							</div>
+							<div class="info-row">
+								<div class="info-label">Date of Birth:</div>
+								<div class="info-value">{{ account_info.date_of_birth }}</div>
+							</div>
+							<div class="info-row">
+								<div class="info-label">Gender:</div>
+								<div class="info-value">{{ account_info.gender }}</div>
+							</div>
+							<div class="info-row">
+								<div class="info-label">Nationality:</div>
+								<div class="info-value">{{ account_info.nationality }}</div>
+							</div>
+							<div class="info-row">
+								<div class="info-label">Passport Number:</div>
+								<div class="info-value">{{ account_info.passport_number }}</div>
+							</div>
+						</div>
+
+						<!-- Contact Information -->
+						<div class="info-section">
+							<h4>Contact Information</h4>
+							<div class="info-row">
+								<div class="info-label">Email Address:</div>
+								<div class="info-value">{{ account_info.email }}</div>
+							</div>
+							<div class="info-row">
+								<div class="info-label">Phone Number:</div>
+								<div class="info-value">{{ account_info.phone_number }}</div>
+							</div>
+						</div>
+
+						<!-- Account Details -->
+						<div class="info-section">
+							<h4>Account Details</h4>
+							<div class="info-row">
+								<div class="info-label">User ID:</div>
+								<div class="info-value">{{ account_info.user_id }}</div>
+							</div>
+							<div class="info-row">
+								<div class="info-label">Member Since:</div>
+								<div class="info-value">{{ account_info.created_at }}</div>
+							</div>
+						</div>
+
+						<div class="text-center" style="margin-top: 30px;">
+							<a href="{{ url_for('dashboard') }}" class="btn btn-primary">Back to Dashboard</a>
+							<a href="{{ url_for('manage_bookings') }}" class="btn btn-default">View My Bookings</a>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<footer id="gtco-footer" role="contentinfo">
+		<div class="gtco-container">
+			<div class="row copyright">
+				<div class="col-md-12">
+					<p class="pull-left">
+						<small class="block">&copy; 2024 IAT Airlines. All Rights Reserved.</small> 
+					</p>
+				</div>
+			</div>
+		</div>
+	</footer>
+	</div>
+
+	<div class="gototop js-top">
+		<a href="#" class="js-gotop"><i class="icon-arrow-up"></i></a>
+	</div>
+	
+	<!-- jQuery -->
+	<script src="{{ url_for('static', filename='js/jquery.min.js') }}"></script>
+	<!-- jQuery Easing -->
+	<script src="{{ url_for('static', filename='js/jquery.easing.1.3.js') }}"></script>
+	<!-- Bootstrap -->
+	<script src="{{ url_for('static', filename='js/bootstrap.min.js') }}"></script>
+	<!-- Waypoints -->
+	<script src="{{ url_for('static', filename='js/jquery.waypoints.min.js') }}"></script>
+	<!-- Carousel -->
+	<script src="{{ url_for('static', filename='js/owl.carousel.min.js') }}"></script>
+	<!-- countTo -->
+	<script src="{{ url_for('static', filename='js/jquery.countTo.js') }}"></script>
+
+	<!-- Stellar Parallax -->
+	<script src="{{ url_for('static', filename='js/jquery.stellar.min.js') }}"></script>
+
+	<!-- Magnific Popup -->
+	<script src="{{ url_for('static', filename='js/jquery.magnific-popup.min.js') }}"></script>
+	<script src="{{ url_for('static', filename='js/magnific-popup-options.js') }}"></script>
+
+	<!-- Main -->
+	<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+
+	</body>
+</html>

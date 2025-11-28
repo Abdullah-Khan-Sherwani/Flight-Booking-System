@@ -1888,6 +1888,11 @@ form label {
   }
 }
 
+/* Make navigation logo white */
+#gtco-logo a {
+    color: white !important;
+}
+
 
 
 /*# sourceMappingURL=style.css.map */

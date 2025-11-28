@@ -8,19 +8,19 @@
 	<head>
 	<meta charset="utf-8">
 	<meta http-equiv="X-UA-Compatible" content="IE=edge">
-	<title>Traveler &mdash; Free Website Template, Free HTML5 Template by FreeHTML5.co</title>
+	<title>Contact - IAT Airlines</title>
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<meta name="description" content="Free HTML5 Website Template by FreeHTML5.co" />
-	<meta name="keywords" content="free website templates, free html5, free template, free bootstrap, free website template, html5, css3, mobile first, responsive" />
-	<meta name="author" content="FreeHTML5.co" />
+	<meta name="description" content="Contact IAT Airlines - Pakistan's Domestic Airline" />
+	<meta name="keywords" content="contact, support, help, flights, pakistan, domestic airlines" />
+	<meta name="author" content="IAT Airlines" />
 
   	<!-- Facebook and Twitter integration -->
-	<meta property="og:title" content=""/>
+	<meta property="og:title" content="Contact - IAT Airlines"/>
 	<meta property="og:image" content=""/>
 	<meta property="og:url" content=""/>
-	<meta property="og:site_name" content=""/>
-	<meta property="og:description" content=""/>
-	<meta name="twitter:title" content="" />
+	<meta property="og:site_name" content="IAT Airlines"/>
+	<meta property="og:description" content="Get in touch with IAT Airlines for support and inquiries"/>
+	<meta name="twitter:title" content="Contact - IAT Airlines" />
 	<meta name="twitter:image" content="" />
 	<meta name="twitter:url" content="" />
 	<meta name="twitter:card" content="" />
@@ -39,9 +39,6 @@
 	<!-- Magnific Popup -->
 	<link rel="stylesheet" href="{{ url_for('static', filename='css/magnific-popup.css') }}">
 
-	<!-- Magnific Popup -->
-	<link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap-datepicker.min.css') }}">
-
 	<!-- Owl Carousel  -->
 	<link rel="stylesheet" href="{{ url_for('static', filename='css/owl.carousel.min.css') }}">
 	<link rel="stylesheet" href="{{ url_for('static', filename='css/owl.theme.default.min.css') }}">
@@ -51,6 +48,37 @@
 
 	<!-- Modernizr JS -->
 	<script src="{{ url_for('static', filename='js/modernizr-2.6.2.min.js') }}"></script>
+
+	<style>
+		/* Move navigation menu to the right */
+		.col-xs-8.text-right.menu-1 {
+			position: relative;
+			right: -100px;
+			top: 0;
+		}
+		.contact-info-box {
+			background: #f8f9fa;
+			padding: 30px;
+			border-radius: 10px;
+			margin-bottom: 30px;
+			border-left: 4px solid #007bff;
+		}
+		.contact-icon {
+			font-size: 2em;
+			color: #007bff;
+			margin-bottom: 15px;
+		}
+		.contact-detail {
+			font-size: 1.1em;
+			margin-bottom: 10px;
+		}
+		.working-hours {
+			background: #e7f3ff;
+			padding: 20px;
+			border-radius: 8px;
+			margin-top: 20px;
+		}
+	</style>
 	<!-- FOR IE9 below -->
 	<!--[if lt IE 9]>
 	<script src="{{ url_for('static', filename='js/respond.min.js') }}"></script>
@@ -63,33 +91,50 @@
 	
 	<div id="page">
 
-	
-	<!-- <div class="page-inner"> -->
+	<!-- Navigation -->
 	<nav class="gtco-nav" role="navigation">
 		<div class="gtco-container">
-			
 			<div class="row">
 				<div class="col-sm-4 col-xs-12">
-					<div id="gtco-logo"><a href="{{ url_for('home') }}">IAT Airlines <em>.</em></a></div>
+					<div id="gtco-logo"><a href="{{ url_for('dashboard') }}">IAT Airlines <em>.</em></a></div>
 				</div>
 				<div class="col-xs-8 text-right menu-1">
 					<ul>
-						<li><a href="{{ url_for('destination') }}">Destination</a></li>
+						<li><a href="{{ url_for('manage_bookings') }}">Manage Bookings</a></li>
 						<li class="has-dropdown">
-							<a href="#">Travel</a>
+							<a href="#">Book Travel</a>
 							<ul class="dropdown">
-								<li><a href="#">Europe</a></li>
-								<li><a href="#">Asia</a></li>
-								<li><a href="#">America</a></li>
-								<li><a href="#">Canada</a></li>
+								<li><a href="#">One Way</a></li>
+								<li><a href="#">Round Trip</a></li>
+								<li><a href="#">Multi City</a></li>
 							</ul>
 						</li>
-						<li><a href="{{ url_for('pricing') }}">Pricing</a></li>
+						<li><a href="{{ url_for('pricing') }}">Fares</a></li>
 						<li class="active"><a href="{{ url_for('contact') }}">Contact</a></li>
+						
+						<!-- User Profile Section -->
+						{% if session.user_first_name %}
+						<li class="has-dropdown">
+							<a href="#">
+								<div style="display: inline-flex; align-items: center;">
+									<div style="width: 32px; height: 32px; background: linear-gradient(135deg, #2c3e50, #3498db); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 14px; margin-right: 8px;">
+										{{ session.user_first_name[0]|upper }}
+									</div>
+									{{ session.user_first_name }}
+								</div>
+							</a>
+							<ul class="dropdown">
+								<li><a href="{{ url_for('account_info') }}">Account</a></li>
+								<li><a href="{{ url_for('manage_bookings') }}">My Bookings</a></li>
+								<li><a href="{{ url_for('logout') }}">Logout</a></li>
+							</ul>
+						</li>
+						{% else %}
+						<li><a href="{{ url_for('login') }}">Login</a></li>
+						{% endif %}
 					</ul>	
 				</div>
 			</div>
-			
 		</div>
 	</nav>
 	
@@ -99,75 +144,172 @@
 			<div class="row">
 				<div class="col-md-12 col-md-offset-0 text-left">
 					<div class="row row-mt-15em">
-
 						<div class="col-md-7 mt-text animate-box" data-animate-effect="fadeInUp">
-							<span class="intro-text-small">Don't be shy</span>
-							<h1>Get In Touch</h1>	
+							<h1>We're Here to Help</h1>
+							<p class="lead">Get in touch with our customer support team for any questions or assistance with your flights.</p>	
 						</div>
-						
 					</div>
-					
 				</div>
 			</div>
 		</div>
 	</header>
 	
-	
 	<div class="gtco-section border-bottom">
 		<div class="gtco-container">
 			<div class="row">
-				<div class="col-md-12">
-					<div class="col-md-6 animate-box">
-					<h3>Get In Touch</h3>
-					<form action="#">
+				<div class="col-md-8 animate-box">
+					<h3>Send Us a Message</h3>
+					<form action="#" method="post">
 						<div class="row form-group">
-							<div class="col-md-12">
-								<label class="sr-only" for="name">Name</label>
-								<input type="text" id="name" class="form-control" placeholder="Your firstname">
+							<div class="col-md-6">
+								<label for="name">First Name</label>
+								<input type="text" id="name" class="form-control" placeholder="Your first name" required>
 							</div>
-							
-						</div>
-
-						<div class="row form-group">
-							<div class="col-md-12">
-								<label class="sr-only" for="email">Email</label>
-								<input type="text" id="email" class="form-control" placeholder="Your email address">
+							<div class="col-md-6">
+								<label for="lastname">Last Name</label>
+								<input type="text" id="lastname" class="form-control" placeholder="Your last name" required>
 							</div>
 						</div>
 
 						<div class="row form-group">
-							<div class="col-md-12">
-								<label class="sr-only" for="subject">Subject</label>
-								<input type="text" id="subject" class="form-control" placeholder="Your subject of this message">
+							<div class="col-md-6">
+								<label for="email">Email Address</label>
+								<input type="email" id="email" class="form-control" placeholder="Your email address" required>
+							</div>
+							<div class="col-md-6">
+								<label for="phone">Phone Number</label>
+								<input type="tel" id="phone" class="form-control" placeholder="Your phone number">
 							</div>
 						</div>
 
 						<div class="row form-group">
 							<div class="col-md-12">
-								<label class="sr-only" for="message">Message</label>
-								<textarea name="message" id="message" cols="30" rows="10" class="form-control" placeholder="Write us something"></textarea>
+								<label for="subject">Subject</label>
+								<select id="subject" class="form-control" required>
+									<option value="">Select Inquiry Type</option>
+									<option value="booking">Flight Booking Assistance</option>
+									<option value="modification">Booking Modification</option>
+									<option value="cancellation">Cancellation & Refund</option>
+									<option value="baggage">Baggage Information</option>
+									<option value="special">Special Assistance</option>
+									<option value="other">Other Inquiry</option>
+								</select>
+							</div>
+						</div>
+
+						<div class="row form-group">
+							<div class="col-md-12">
+								<label for="message">Message</label>
+								<textarea name="message" id="message" cols="30" rows="7" class="form-control" placeholder="Please describe your inquiry in detail..." required></textarea>
 							</div>
 						</div>
 						<div class="form-group">
-							<input type="submit" value="Send Message" class="btn btn-primary">
+							<input type="submit" value="Send Message" class="btn btn-primary btn-lg">
 						</div>
-
 					</form>		
 				</div>
-				<div class="col-md-5 col-md-push-1 animate-box">
-					
-					<div class="gtco-contact-info">
+				<div class="col-md-4 animate-box">
+					<div class="contact-info-box">
 						<h3>Contact Information</h3>
-						<ul>
-							<li class="address">198 West 21th Street, <br> Suite 721 New York NY 10016</li>
-							<li class="phone"><a href="tel://1234567920">+ 1235 2355 98</a></li>
-							<li class="email"><a href="mailto:info@yoursite.com">info@yoursite.com</a></li>
-							<li class="url"><a href="https://freehtml5.co">FreeHTML5.co</a></li>
+						
+						<div class="contact-detail">
+							<div class="contact-icon">
+								<i class="icon-map-marker"></i>
+							</div>
+							<strong>Head Office</strong><br>
+							IAT Airlines Headquarters<br>
+							Jinnah International Airport<br>
+							Karachi, Pakistan
+						</div>
+						
+						<div class="contact-detail">
+							<div class="contact-icon">
+								<i class="icon-phone"></i>
+							</div>
+							<strong>Customer Service</strong><br>
+							<a href="tel:+923001234567">+92 300 123 4567</a><br>
+							<a href="tel:+922134567890">+92 21 3456 7890</a>
+						</div>
+						
+						<div class="contact-detail">
+							<div class="contact-icon">
+								<i class="icon-envelope"></i>
+							</div>
+							<strong>Email</strong><br>
+							<a href="mailto:info@iatairlines.com">info@iatairlines.com</a><br>
+							<a href="mailto:support@iatairlines.com">support@iatairlines.com</a>
+						</div>
+						
+						<div class="contact-detail">
+							<div class="contact-icon">
+								<i class="icon-clock"></i>
+							</div>
+							<strong>Customer Support Hours</strong>
+							<div class="working-hours">
+								<strong>24/7 Flight Operations</strong><br>
+								Customer Service: 6:00 AM - 12:00 AM<br>
+								Emergency: 24/7 Available
+							</div>
+						</div>
+					</div>
+					
+					<div class="contact-info-box">
+						<h3>Quick Help</h3>
+						<ul class="gtco-footer-links">
+							<li><a href="{{ url_for('manage_bookings') }}">Manage My Booking</a></li>
+							<li><a href="{{ url_for('pricing') }}">Check Flight Fares</a></li>
+							<li><a href="#">Flight Status</a></li>
+							<li><a href="#">Baggage Information</a></li>
+							<li><a href="#">Special Assistance</a></li>
+							<li><a href="#">FAQ</a></li>
 						</ul>
 					</div>
-
-
 				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="gtco-section">
+		<div class="gtco-container">
+			<div class="row">
+				<div class="col-md-8 col-md-offset-2 text-center gtco-heading">
+					<h2>Our Offices Across Pakistan</h2>
+					<p>We have customer service centers in all major cities to serve you better</p>
+				</div>
+			</div>
+			<div class="row">
+				<div class="col-md-4 text-center animate-box">
+					<div class="feature-center">
+						<span class="icon">
+							<i class="icon-map-marker"></i>
+						</span>
+						<h3>Karachi Office</h3>
+						<p>Jinnah International Airport<br>
+						Customer Service Terminal<br>
+						Phone: +92 21 3456 7891</p>
+					</div>
+				</div>
+				<div class="col-md-4 text-center animate-box">
+					<div class="feature-center">
+						<span class="icon">
+							<i class="icon-map-marker"></i>
+						</span>
+						<h3>Lahore Office</h3>
+						<p>Allama Iqbal International Airport<br>
+						Main Terminal Building<br>
+						Phone: +92 42 3456 7892</p>
+					</div>
+				</div>
+				<div class="col-md-4 text-center animate-box">
+					<div class="feature-center">
+						<span class="icon">
+							<i class="icon-map-marker"></i>
+						</span>
+						<h3>Islamabad Office</h3>
+						<p>Islamabad International Airport<br>
+						Departure Hall<br>
+						Phone: +92 51 3456 7893</p>
+					</div>
 				</div>
 			</div>
 		</div>
@@ -175,7 +317,7 @@
 
 	<footer id="gtco-footer" role="contentinfo">
 		<div class="gtco-container">
-			<div class="row row-p	b-md">
+			<div class="row row-pb-md">
 
 				<div class="col-md-4">
 					<div class="gtco-widget">
@@ -215,8 +357,8 @@
 					<div class="gtco-widget">
 						<h3>Get In Touch</h3>
 						<ul class="gtco-quick-contact">
-							<li><a href="#"><i class="icon-phone"></i> +1 234 567 890</a></li>
-							<li><a href="#"><i class="icon-mail2"></i> info@freehtml5.co</a></li>
+							<li><a href="tel:+923001234567"><i class="icon-phone"></i> +92 300 1234567</a></li>
+							<li><a href="mailto:info@iatairlines.com"><i class="icon-mail2"></i> info@iatairlines.com</a></li>
 							<li><a href="#"><i class="icon-chat"></i> Live Chat</a></li>
 						</ul>
 					</div>
@@ -227,15 +369,15 @@
 			<div class="row copyright">
 				<div class="col-md-12">
 					<p class="pull-left">
-						<small class="block">&copy; 2016 Free HTML5. All Rights Reserved.</small> 
-						<small class="block">Designed by <a href="https://freehtml5.co/" target="_blank">FreeHTML5.co</a> Demo Images: <a href="http://unsplash.com/" target="_blank">Unsplash</a></small>
+						<small class="block">&copy; 2024 IAT Airlines. All Rights Reserved.</small> 
+						<small class="block">Domestic Airline Management System</small>
 					</p>
 					<p class="pull-right">
 						<ul class="gtco-social-icons pull-right">
 							<li><a href="#"><i class="icon-twitter"></i></a></li>
 							<li><a href="#"><i class="icon-facebook"></i></a></li>
 							<li><a href="#"><i class="icon-linkedin"></i></a></li>
-							<li><a href="#"><i class="icon-dribbble"></i></a></li>
+							<li><a href="#"><i class="icon-instagram"></i></a></li>
 						</ul>
 					</p>
 				</div>
@@ -243,7 +385,6 @@
 
 		</div>
 	</footer>
-	<!-- </div> -->
 
 	</div>
 
@@ -270,13 +411,21 @@
 	<!-- Magnific Popup -->
 	<script src="{{ url_for('static', filename='js/jquery.magnific-popup.min.js') }}"></script>
 	<script src="{{ url_for('static', filename='js/magnific-popup-options.js') }}"></script>
-	
-	<!-- Datepicker -->
-	<script src="{{ url_for('static', filename='js/bootstrap-datepicker.min.js') }}"></script>
-	
 
 	<!-- Main -->
 	<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+
+	<script>
+		$(document).ready(function(){
+			// Form submission handling
+			$('form').submit(function(e) {
+				e.preventDefault();
+				// Here you would typically send the form data to your server
+				alert('Thank you for your message! We will get back to you soon.');
+				this.reset();
+			});
+		});
+	</script>
 
 	</body>
 </html>

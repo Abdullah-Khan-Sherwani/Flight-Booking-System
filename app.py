@@ -8,13 +8,276 @@ import os
 import zipfile
 from io import BytesIO
 from ticket_generator import TicketGenerator
+import hashlib
+import secrets
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key_here'  # Required for sessions
 
+# Password validation function
+def validate_password(password):
+    """Validate password meets requirements"""
+    if len(password) < 8:
+        return False, "Password must be at least 8 characters long"
+    if not re.search(r'[A-Z]', password):
+        return False, "Password must contain at least one uppercase letter"
+    if not re.search(r'[a-z]', password):
+        return False, "Password must contain at least one lowercase letter"
+    if not re.search(r'\d', password):
+        return False, "Password must contain at least one digit"
+    if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
+        return False, "Password must contain at least one special character"
+    return True, "Password is valid"
+
+# Hash password function
+def hash_password(password):
+    """Hash password using SHA-256"""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+
 @app.route('/')
 def home():
+    # Redirect to login page if not authenticated, otherwise to dashboard
+    if 'user_id' in session:
+        return redirect(url_for('dashboard'))
+    return redirect(url_for('login'))
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        email = request.form.get('email')
+        password = request.form.get('password')
+        
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # Check if user exists and password matches
+            cursor.execute("""
+                SELECT User_ID, Email, Password_Hash, Phone_Number 
+                FROM App_User 
+                WHERE Email = :email
+            """, email=email)
+            
+            user = cursor.fetchone()
+            
+            if user and user[2] == hash_password(password):
+                # Login successful
+                session['user_id'] = user[0]
+                session['user_email'] = user[1]
+                session['user_phone'] = user[3]
+                
+                # Get user's first name for display
+                cursor.execute("""
+                    SELECT First_Name FROM Passenger 
+                    WHERE Linked_User_ID = :user_id
+                """, user_id=user[0])
+                
+                passenger = cursor.fetchone()
+                if passenger:
+                    session['user_first_name'] = passenger[0]
+                
+                return redirect(url_for('dashboard'))
+            else:
+                return render_template('login.html', error="Invalid email or password")
+                
+        except Exception as e:
+            print("Login error:", e)
+            return render_template('login.html', error="Login failed. Please try again.")
+        finally:
+            cursor.close()
+            conn.close()
+    
+    return render_template('login.html')
+
+@app.route('/signup', methods=['GET', 'POST'])
+def signup():
+    if request.method == 'POST':
+        email = request.form.get('email')
+        password = request.form.get('password')
+        confirm_password = request.form.get('confirm_password')
+        phone_number = request.form.get('phone_number')
+        first_name = request.form.get('first_name')
+        last_name = request.form.get('last_name')
+        date_of_birth = request.form.get('date_of_birth')
+        gender = request.form.get('gender')
+        nationality = request.form.get('nationality')
+        title = request.form.get('title', 'MR')
+        
+        print(f"DEBUG - Signup attempt for email: {email}")
+
+        # Validate passwords match
+        if password != confirm_password:
+            return render_template('signup.html', error="Passwords do not match")
+        
+        # Validate password strength
+        is_valid, message = validate_password(password)
+        if not is_valid:
+            return render_template('signup.html', error=message)
+        
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # Check if email already exists
+            cursor.execute("SELECT User_ID FROM App_User WHERE LOWER(Email) = LOWER(:email)", email=email)
+            if cursor.fetchone():
+                return render_template('signup.html', error="Email already exists. Please use a different email or try logging in.")
+            
+            # Get next available User_ID manually (workaround for identity issues)
+            cursor.execute("SELECT COALESCE(MAX(User_ID), 0) + 1 FROM App_User")
+            next_user_id = cursor.fetchone()[0]
+            
+            print(f"DEBUG - Next User_ID: {next_user_id}")
+            
+            # Create user account with explicit User_ID
+            password_hash = hash_password(password)
+            
+            cursor.execute("""
+                INSERT INTO App_User (User_ID, Email, Password_Hash, Phone_Number)
+                VALUES (:user_id, :email, :password_hash, :phone_number)
+            """, 
+            user_id=next_user_id,
+            email=email, 
+            password_hash=password_hash, 
+            phone_number=phone_number)
+            
+            print(f"DEBUG - User account created with ID: {next_user_id}")
+            
+            # Create passenger profile linked to user
+            cursor.execute("""
+                INSERT INTO Passenger 
+                (Linked_User_ID, First_Name, Last_Name, Date_Of_Birth, Gender, Nationality, Title)
+                VALUES (:user_id, :first_name, :last_name, TO_DATE(:dob, 'YYYY-MM-DD'), :gender, :nationality, :title)
+            """, 
+            user_id=next_user_id,
+            first_name=first_name,
+            last_name=last_name,
+            dob=date_of_birth,
+            gender=gender,
+            nationality=nationality,
+            title=title)
+            
+            conn.commit()
+            print(f"DEBUG - Signup successful for user: {next_user_id}")
+            
+            # Auto-login after signup
+            session['user_id'] = next_user_id
+            session['user_email'] = email
+            session['user_phone'] = phone_number
+            session['user_first_name'] = first_name
+            
+            return redirect(url_for('dashboard'))
+            
+        except Exception as e:
+            conn.rollback()
+            print(f"SIGNUP ERROR: {e}")
+            print(f"Error type: {type(e).__name__}")
+            
+            # More specific error handling
+            if "unique constraint" in str(e).lower():
+                if "SYS_C009170" in str(e):
+                    return render_template('signup.html', error="System error: User ID conflict. Please try again with a different email.")
+                else:
+                    return render_template('signup.html', error="This email address is already registered.")
+            elif "ORA-00001" in str(e):
+                return render_template('signup.html', error="Duplicate entry detected. Please try again with a different email.")
+            else:
+                return render_template('signup.html', error=f"Registration failed: {str(e)}")
+        finally:
+            cursor.close()
+            conn.close()
+    
+    return render_template('signup.html')
+
+@app.route('/dashboard')
+def dashboard():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    return render_template('index.html')  # This will be your main page after login
+
+# Update the home route to redirect to dashboard if logged in
+@app.route('/index')
+def index():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
     return render_template('index.html')
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+@app.route('/account-info')
+def account_info():
+    """Display account information page"""
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Get user account details
+        cursor.execute("""
+            SELECT u.User_ID, u.Email, u.Phone_Number, u.Created_At,
+                   p.First_Name, p.Last_Name, p.Date_Of_Birth, p.Gender, 
+                   p.Nationality, p.Title, p.Passport_Num
+            FROM App_User u
+            LEFT JOIN Passenger p ON u.User_ID = p.Linked_User_ID
+            WHERE u.User_ID = :user_id
+        """, user_id=session['user_id'])
+        
+        user_data = cursor.fetchone()
+        
+        if not user_data:
+            return render_template('error.html', error="User account not found")
+        
+        # Get booking history count
+        cursor.execute("""
+            SELECT COUNT(*) 
+            FROM Booking 
+            WHERE Lead_User_ID = :user_id
+        """, user_id=session['user_id'])
+        booking_count = cursor.fetchone()[0]
+        
+        # Get upcoming flights
+        cursor.execute("""
+            SELECT COUNT(*) 
+            FROM Reservation r
+            JOIN Booking b ON r.Booking_ID = b.Booking_ID
+            JOIN Flight_Instance fi ON r.Instance_ID = fi.Instance_ID
+            WHERE b.Lead_User_ID = :user_id
+            AND fi.Departure_Time > SYSTIMESTAMP
+            AND b.Booking_Status = 'CONFIRMED'
+        """, user_id=session['user_id'])
+        upcoming_flights = cursor.fetchone()[0]
+        
+        # Format user data for template
+        account_info = {
+            'user_id': user_data[0],
+            'email': user_data[1],
+            'phone_number': user_data[2],
+            'created_at': user_data[3].strftime('%B %d, %Y') if user_data[3] else 'N/A',
+            'first_name': user_data[4],
+            'last_name': user_data[5],
+            'date_of_birth': user_data[6].strftime('%B %d, %Y') if user_data[6] else 'N/A',
+            'gender': user_data[7],
+            'nationality': user_data[8],
+            'title': user_data[9],
+            'passport_number': user_data[10] or 'Not provided',
+            'booking_count': booking_count,
+            'upcoming_flights': upcoming_flights
+        }
+        
+        return render_template('account_info.html', account_info=account_info)
+        
+    except Exception as e:
+        print("Error loading account info:", e)
+        return render_template('error.html', error="Error loading account information")
+    finally:
+        cursor.close()
+        conn.close()
 
 @app.route('/contact')
 def contact():
@@ -24,9 +287,265 @@ def contact():
 def destination():
     return render_template('destination.html')
 
-@app.route('/pricing')
+@app.route('/pricing', methods=['GET', 'POST'])
 def pricing():
-    return render_template('pricing.html')
+    """Display flight pricing with filtering options"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Get filter parameters
+        departure_city = request.form.get('departure_city') or request.args.get('departure_city', '')
+        arrival_city = request.form.get('arrival_city') or request.args.get('arrival_city', '')
+        travel_date = request.form.get('travel_date') or request.args.get('travel_date', '')
+        
+        # Get all available cities for dropdowns
+        cursor.execute("""
+            SELECT DISTINCT a.Airport_ID, c.City_Name, a.Airport_Name
+            FROM Airport a
+            JOIN Zip_Master z ON a.Zipcode = z.Zipcode
+            JOIN City c ON z.City_ID = c.City_ID
+            ORDER BY c.City_Name
+        """)
+        cities = cursor.fetchall()
+        
+        # Build query for flight pricing
+        query = """
+            SELECT 
+                fi.Instance_ID,
+                fr.Source_Airport,
+                fr.Dest_Airport,
+                TO_CHAR(fi.Departure_Time, 'YYYY-MM-DD HH24:MI') as Departure_Time,
+                TO_CHAR(fi.Arrival_Time, 'YYYY-MM-DD HH24:MI') as Arrival_Time,
+                a1.Airport_Name as Source_Airport_Name,
+                a2.Airport_Name as Dest_Airport_Name,
+                c1.City_Name as Source_City,
+                c2.City_Name as Dest_City,
+                fi.Model_ID,
+                -- Economy Price
+                (SELECT Base_Price FROM Route_Pricing 
+                 WHERE Route_ID = fr.Route_ID AND Class_ID = 'ECO'
+                 AND SYSDATE BETWEEN Valid_From AND Valid_To
+                 AND ROWNUM = 1) as Eco_Price,
+                -- Business Price
+                (SELECT Base_Price FROM Route_Pricing 
+                 WHERE Route_ID = fr.Route_ID AND Class_ID = 'BUS'
+                 AND SYSDATE BETWEEN Valid_From AND Valid_To
+                 AND ROWNUM = 1) as Bus_Price,
+                -- First Class Price
+                (SELECT Base_Price FROM Route_Pricing 
+                 WHERE Route_ID = fr.Route_ID AND Class_ID = 'FIR'
+                 AND SYSDATE BETWEEN Valid_From AND Valid_To
+                 AND ROWNUM = 1) as First_Price,
+                -- Available seats by class
+                (SELECT COUNT(*) FROM Aircraft_Seat_Map asm
+                 JOIN Aircraft_Row_Class arc ON asm.Model_ID = arc.Model_ID AND asm.Row_Number = arc.Row_Number
+                 WHERE asm.Model_ID = fi.Model_ID AND arc.Class_ID = 'ECO') - 
+                (SELECT COUNT(*) FROM Reservation r 
+                 WHERE r.Instance_ID = fi.Instance_ID 
+                 AND EXISTS (SELECT 1 FROM Aircraft_Row_Class arc2 
+                           WHERE arc2.Model_ID = fi.Model_ID 
+                           AND arc2.Row_Number = r.Row_Number 
+                           AND arc2.Class_ID = 'ECO')) as Eco_Seats_Available,
+                (SELECT COUNT(*) FROM Aircraft_Seat_Map asm
+                 JOIN Aircraft_Row_Class arc ON asm.Model_ID = arc.Model_ID AND asm.Row_Number = arc.Row_Number
+                 WHERE asm.Model_ID = fi.Model_ID AND arc.Class_ID = 'BUS') - 
+                (SELECT COUNT(*) FROM Reservation r 
+                 WHERE r.Instance_ID = fi.Instance_ID 
+                 AND EXISTS (SELECT 1 FROM Aircraft_Row_Class arc2 
+                           WHERE arc2.Model_ID = fi.Model_ID 
+                           AND arc2.Row_Number = r.Row_Number 
+                           AND arc2.Class_ID = 'BUS')) as Bus_Seats_Available,
+                (SELECT COUNT(*) FROM Aircraft_Seat_Map asm
+                 JOIN Aircraft_Row_Class arc ON asm.Model_ID = arc.Model_ID AND asm.Row_Number = arc.Row_Number
+                 WHERE asm.Model_ID = fi.Model_ID AND arc.Class_ID = 'FIR') - 
+                (SELECT COUNT(*) FROM Reservation r 
+                 WHERE r.Instance_ID = fi.Instance_ID 
+                 AND EXISTS (SELECT 1 FROM Aircraft_Row_Class arc2 
+                           WHERE arc2.Model_ID = fi.Model_ID 
+                           AND arc2.Row_Number = r.Row_Number 
+                           AND arc2.Class_ID = 'FIR')) as First_Seats_Available
+            FROM Flight_Instance fi
+            JOIN Flight_Route fr ON fi.Route_ID = fr.Route_ID
+            JOIN Airport a1 ON fr.Source_Airport = a1.Airport_ID
+            JOIN Airport a2 ON fr.Dest_Airport = a2.Airport_ID
+            JOIN Zip_Master zm1 ON a1.Zipcode = zm1.Zipcode
+            JOIN Zip_Master zm2 ON a2.Zipcode = zm2.Zipcode
+            JOIN City c1 ON zm1.City_ID = c1.City_ID
+            JOIN City c2 ON zm2.City_ID = c2.City_ID
+            WHERE fi.Flight_Status = 'SCHEDULED'
+            AND fi.Departure_Time >= SYSTIMESTAMP
+        """
+        
+        params = {}
+        
+        # Add filters if provided
+        if departure_city:
+            query += " AND fr.Source_Airport = :departure_city"
+            params['departure_city'] = departure_city
+            
+        if arrival_city:
+            query += " AND fr.Dest_Airport = :arrival_city"
+            params['arrival_city'] = arrival_city
+            
+        if travel_date:
+            query += " AND TRUNC(fi.Departure_Time) = TO_DATE(:travel_date, 'YYYY-MM-DD')"
+            params['travel_date'] = travel_date
+        
+        query += " ORDER BY fi.Departure_Time, c1.City_Name, c2.City_Name"
+        
+        cursor.execute(query, **params)
+        flights = cursor.fetchall()
+        
+        # Format flight data for template
+        flight_data = []
+        for flight in flights:
+            flight_info = {
+                'instance_id': flight[0],
+                'source_airport': flight[1],
+                'dest_airport': flight[2],
+                'departure_time': flight[3],
+                'arrival_time': flight[4],
+                'source_airport_name': flight[5],
+                'dest_airport_name': flight[6],
+                'source_city': flight[7],
+                'dest_city': flight[8],
+                'model_id': flight[9],
+                'pricing': {
+                    'ECO': flight[10] or 'N/A',
+                    'BUS': flight[11] or 'N/A', 
+                    'FIR': flight[12] or 'N/A'
+                },
+                'seats_available': {
+                    'ECO': flight[13] or 0,
+                    'BUS': flight[14] or 0,
+                    'FIR': flight[15] or 0
+                }
+            }
+            flight_data.append(flight_info)
+        
+        return render_template('pricing.html',
+                            flights=flight_data,
+                            cities=cities,
+                            filters={
+                                'departure_city': departure_city,
+                                'arrival_city': arrival_city,
+                                'travel_date': travel_date
+                            })
+        
+    except Exception as e:
+        print("Error loading pricing:", e)
+        return render_template('error.html', error="Error loading flight pricing")
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.route('/search-flights', methods=['GET'])
+def search_flights_get():
+    """Handle GET requests for flight search (from pricing page)"""
+    departure_city = request.args.get('departure_city')
+    arrival_city = request.args.get('arrival_city')
+    departure_date = request.args.get('departure_date')
+    
+    if not all([departure_city, arrival_city, departure_date]):
+        return render_template("search_results.html", flights=[], error="Please provide all search parameters")
+    
+    # Set default values for other parameters
+    travel_class = 'ECO'
+    passengers = '1'
+    trip_type = 'one_way'
+    
+    print(f"GET Search: {departure_city} to {arrival_city} on {departure_date}")
+
+    # Store search criteria in session for later use
+    session['search_travel_class'] = travel_class
+    session['search_passengers'] = passengers
+    session['search_trip_type'] = trip_type
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Get city names using new schema
+        cursor.execute("""
+            SELECT a.Airport_Name, c.City_Name 
+            FROM Airport a
+            JOIN Zip_Master z ON a.Zipcode = z.Zipcode
+            JOIN City c ON z.City_ID = c.City_ID
+            WHERE a.Airport_ID = :dept
+        """, dept=departure_city)
+        departure_info = cursor.fetchone()
+        departure_city_name = departure_info[1] if departure_info else departure_city
+        
+        cursor.execute("""
+            SELECT a.Airport_Name, c.City_Name 
+            FROM Airport a
+            JOIN Zip_Master z ON a.Zipcode = z.Zipcode
+            JOIN City c ON z.City_ID = c.City_ID
+            WHERE a.Airport_ID = :arr
+        """, arr=arrival_city)
+        arrival_info = cursor.fetchone()
+        arrival_city_name = arrival_info[1] if arrival_info else arrival_city
+        
+        # Map travel class codes to full names
+        class_names = {
+            'ECO': 'Economy',
+            'BUS': 'Business', 
+            'FIR': 'First Class'
+        }
+        travel_class_name = class_names.get(travel_class, travel_class)
+
+        # Get flights using new schema - UPDATED FOR NEW SCHEMA
+        query = """
+            SELECT fi.Instance_ID,
+                   fr.Source_Airport,
+                   fr.Dest_Airport,
+                   TO_CHAR(fi.Departure_Time, 'YYYY-MM-DD HH24:MI'),
+                   TO_CHAR(fi.Arrival_Time, 'YYYY-MM-DD HH24:MI'),
+                   fi.Model_ID,
+                   a1.Airport_Name AS Source_Airport_Name,
+                   a2.Airport_Name AS Dest_Airport_Name,
+                   c1.City_Name AS Source_City,
+                   c2.City_Name AS Dest_City,
+                   (SELECT COUNT(*) FROM Aircraft_Seat_Map WHERE Model_ID = fi.Model_ID) - 
+                   (SELECT COUNT(*) FROM Reservation WHERE Instance_ID = fi.Instance_ID AND Row_Number IS NOT NULL) as Seats_Remaining
+            FROM Flight_Instance fi
+            JOIN Flight_Route fr ON fi.Route_ID = fr.Route_ID
+            JOIN Airport a1 ON fr.Source_Airport = a1.Airport_ID
+            JOIN Airport a2 ON fr.Dest_Airport = a2.Airport_ID
+            JOIN Zip_Master zm1 ON a1.Zipcode = zm1.Zipcode
+            JOIN Zip_Master zm2 ON a2.Zipcode = zm2.Zipcode
+            JOIN City c1 ON zm1.City_ID = c1.City_ID
+            JOIN City c2 ON zm2.City_ID = c2.City_ID
+            WHERE fr.Source_Airport = :src
+              AND fr.Dest_Airport = :dest
+              AND TRUNC(fi.Departure_Time) = TO_DATE(:dep_date, 'YYYY-MM-DD')
+              AND fi.Flight_Status = 'SCHEDULED'
+        """
+        cursor.execute(query, src=departure_city, dest=arrival_city, dep_date=departure_date)
+        flights = cursor.fetchall()
+
+        context = {
+            "flights": flights,
+            "search_criteria": {
+                "departure_city": departure_city_name,
+                "arrival_city": arrival_city_name,
+                "date": departure_date,
+                "travel_class": travel_class_name,
+                "passengers": passengers,
+                "trip_type": trip_type
+            }
+        }
+
+        return render_template("search_results.html", **context)
+
+    except Exception as e:
+        print("Error while searching flights:", e)
+        return render_template("search_results.html", flights=[], error="No flights found or invalid input")
+
+    finally:
+        cursor.close()
+        conn.close()
 
 @app.route('/search-flights', methods=['POST'])
 def search_flights():
@@ -77,7 +596,7 @@ def search_flights():
         }
         travel_class_name = class_names.get(travel_class, travel_class)
 
-        # Get flights using new schema
+        # Get flights using new schema - UPDATED FOR NEW SCHEMA
         query = """
             SELECT fi.Instance_ID,
                    fr.Source_Airport,
@@ -88,7 +607,9 @@ def search_flights():
                    a1.Airport_Name AS Source_Airport_Name,
                    a2.Airport_Name AS Dest_Airport_Name,
                    c1.City_Name AS Source_City,
-                   c2.City_Name AS Dest_City
+                   c2.City_Name AS Dest_City,
+                   (SELECT COUNT(*) FROM Aircraft_Seat_Map WHERE Model_ID = fi.Model_ID) - 
+                   (SELECT COUNT(*) FROM Reservation WHERE Instance_ID = fi.Instance_ID AND Row_Number IS NOT NULL) as Seats_Remaining
             FROM Flight_Instance fi
             JOIN Flight_Route fr ON fi.Route_ID = fr.Route_ID
             JOIN Airport a1 ON fr.Source_Airport = a1.Airport_ID
@@ -180,7 +701,7 @@ def return_flight_search():
             
             print(f"Searching return flights: {return_departure} to {return_arrival} on {return_date}")
             
-            # Search for return flights
+            # Search for return flights - UPDATED FOR NEW SCHEMA
             query = """
                 SELECT fi.Instance_ID,
                        fr.Source_Airport,
@@ -191,7 +712,9 @@ def return_flight_search():
                        a1.Airport_Name AS Source_Airport_Name,
                        a2.Airport_Name AS Dest_Airport_Name,
                        c1.City_Name AS Source_City,
-                       c2.City_Name AS Dest_City
+                       c2.City_Name AS Dest_City,
+                       (SELECT COUNT(*) FROM Aircraft_Seat_Map WHERE Model_ID = fi.Model_ID) - 
+                       (SELECT COUNT(*) FROM Reservation WHERE Instance_ID = fi.Instance_ID AND Row_Number IS NOT NULL) as Seats_Remaining
                 FROM Flight_Instance fi
                 JOIN Flight_Route fr ON fi.Route_ID = fr.Route_ID
                 JOIN Airport a1 ON fr.Source_Airport = a1.Airport_ID
@@ -268,7 +791,7 @@ def seat_selection():
     cursor = conn.cursor()
     
     try:
-        # Get outbound flight details using new schema
+        # Get outbound flight details using new schema - UPDATED
         cursor.execute("""
             SELECT fi.Instance_ID, fi.Model_ID, 
                    c1.City_Name, c2.City_Name,
@@ -310,7 +833,7 @@ def seat_selection():
             if not return_flight:
                 return render_template('error.html', error="Return flight not found")
         
-        # Get available seats for outbound flight using new schema
+        # Get available seats for outbound flight using new schema - UPDATED
         cursor.execute("""
             SELECT asm.Row_Number, asm.Seat_Letter, arc.Class_ID,
                    CASE WHEN r.Reservation_ID IS NULL THEN 'available' ELSE 'booked' END as status
@@ -458,7 +981,7 @@ def passenger_info():
         cursor = conn.cursor()
         
         try:
-            # Get outbound flight details
+            # Get outbound flight details - UPDATED
             cursor.execute("""
                 SELECT fi.Instance_ID, fi.Model_ID, 
                        c1.City_Name, c2.City_Name,
@@ -493,13 +1016,19 @@ def passenger_info():
                 """, flight_id=return_flight_id)
                 return_flight = cursor.fetchone()
             
+            # Get user's contact information from session
+            user_email = session.get('user_email', '')
+            user_phone = session.get('user_phone', '')
+            
             return render_template('passenger_info.html',
                                 outbound_flight=outbound_flight,
                                 return_flight=return_flight,
                                 selected_outbound_seats=selected_outbound_seats,
                                 selected_return_seats=selected_return_seats,
                                 passengers=passengers,
-                                travel_class=travel_class)
+                                travel_class=travel_class,
+                                user_email=user_email,
+                                user_phone=user_phone)
             
         except Exception as e:
             print("Error in passenger info:", e)
@@ -531,15 +1060,22 @@ def process_booking():
         passengers = int(session.get('passengers', 1))
         passenger_data = []
         
+        # Get contact information from separate fields
+        contact_email = request.form.get('contact_email')
+        contact_phone = request.form.get('contact_phone')
+        
+        print(f"DEBUG - Contact Email: {contact_email}")
+        print(f"DEBUG - Contact Phone: {contact_phone}")
+        
         for i in range(passengers):
             passenger_data.append({
                 'first_name': request.form.get(f'first_name_{i}'),
                 'last_name': request.form.get(f'last_name_{i}'),
-                'email': request.form.get(f'email_{i}'),
-                'phone': request.form.get(f'phone_{i}'),
                 'date_of_birth': request.form.get(f'date_of_birth_{i}'),
                 'gender': request.form.get(f'gender_{i}'),
-                'passport_number': request.form.get(f'passport_number_{i}', '')
+                'passport_number': request.form.get(f'passport_number_{i}', ''),
+                'nationality': request.form.get(f'nationality_{i}', 'US'),  # Default nationality
+                'title': request.form.get(f'title_{i}', 'MR')  # Default title
             })
         
         # Get seat selections
@@ -580,8 +1116,8 @@ def process_booking():
                 
                 print(f"DEBUG - Generated {prefix} ID: {test_id}")
                 return test_id
-            
-            # Get flight details for pricing
+
+            # Get flight details for pricing - UPDATED
             cursor.execute("""
                 SELECT fi.Model_ID, fr.Route_ID 
                 FROM Flight_Instance fi
@@ -592,7 +1128,7 @@ def process_booking():
             model_id = flight_info[0]
             route_id = flight_info[1]
             
-            # Calculate total amount using Route_Pricing
+            # Calculate total amount using Route_Pricing - UPDATED
             cursor.execute("""
                 SELECT Base_Price FROM Route_Pricing 
                 WHERE Route_ID = :route_id 
@@ -643,53 +1179,49 @@ def process_booking():
             
             print(f"DEBUG - Total amount: {total_amount}")
             
-            # Create booking (PNR will be auto-generated by trigger)
-            contact_email = passenger_data[0]['email']
-            contact_phone = passenger_data[0]['phone']
-            
+            # Create booking (PNR will be auto-generated by trigger) - UPDATED
             print(f"DEBUG - Creating booking with contact: {contact_email}, {contact_phone}")
             cursor.execute("""
                 INSERT INTO Booking 
-                (Booking_Date, Booking_Status, Contact_Email, Contact_Phone)
+                (Booking_Date, Booking_Status, Contact_Email, Emergency_Phone)
                 VALUES (SYSTIMESTAMP, 'CONFIRMED', :email, :phone)
             """, 
             email=contact_email,
             phone=contact_phone)
             
             # Get the auto-generated booking ID
-            cursor.execute("SELECT Booking_ID FROM Booking WHERE Contact_Email = :email AND Contact_Phone = :phone ORDER BY Booking_Date DESC FETCH FIRST 1 ROW ONLY", 
+            cursor.execute("SELECT Booking_ID FROM Booking WHERE Contact_Email = :email AND Emergency_Phone = :phone ORDER BY Booking_Date DESC FETCH FIRST 1 ROW ONLY", 
                          email=contact_email, phone=contact_phone)
             booking_result = cursor.fetchone()
             booking_id = booking_result[0]
             print(f"DEBUG - Generated Booking ID: {booking_id}")
             
-            # Insert passengers
+            # Insert passengers - UPDATED FOR NEW SCHEMA
             passenger_ids = []
             for i, passenger in enumerate(passenger_data):
                 print(f"DEBUG - Inserting passenger {i}: {passenger['first_name']} {passenger['last_name']}")
                 
                 cursor.execute("""
                     INSERT INTO Passenger 
-                    (Booking_ID, First_Name, Last_Name, Date_Of_Birth, Gender, Email, Phone, Passport_Number)
-                    VALUES (:booking_id, :first_name, :last_name, TO_DATE(:dob, 'YYYY-MM-DD'), :gender, :email, :phone, :passport)
+                    (First_Name, Last_Name, Date_Of_Birth, Gender, Nationality, Passport_Num, Title)
+                    VALUES (:first_name, :last_name, TO_DATE(:dob, 'YYYY-MM-DD'), :gender, :nationality, :passport, :title)
                 """, 
-                booking_id=booking_id,
                 first_name=passenger['first_name'],
                 last_name=passenger['last_name'],
                 dob=passenger['date_of_birth'],
                 gender=passenger['gender'],
-                email=passenger['email'],
-                phone=passenger['phone'],
-                passport=passenger['passport_number'])
+                nationality=passenger['nationality'],
+                passport=passenger['passport_number'],
+                title=passenger['title'])
                 
                 # Get the generated passenger ID
-                cursor.execute("SELECT Passenger_ID FROM Passenger WHERE Booking_ID = :booking_id AND First_Name = :first_name AND Last_Name = :last_name", 
-                             booking_id=booking_id, first_name=passenger['first_name'], last_name=passenger['last_name'])
+                cursor.execute("SELECT Passenger_ID FROM Passenger WHERE First_Name = :first_name AND Last_Name = :last_name AND Date_Of_Birth = TO_DATE(:dob, 'YYYY-MM-DD')", 
+                             first_name=passenger['first_name'], last_name=passenger['last_name'], dob=passenger['date_of_birth'])
                 passenger_result = cursor.fetchone()
                 passenger_ids.append(passenger_result[0])
                 print(f"DEBUG - Passenger {i} ID: {passenger_result[0]}")
             
-            # Create reservations for outbound flight
+            # Create reservations for outbound flight - UPDATED
             for i, seat_simple in enumerate(selected_outbound_seats):
                 if i < len(passenger_ids):
                     # Parse seat information
@@ -703,7 +1235,7 @@ def process_booking():
                     row_num = int(row_match.group())
                     seat_letter = letter_match.group()
                     
-                    # Verify seat exists in aircraft model
+                    # Verify seat exists in aircraft model - UPDATED
                     cursor.execute("""
                         SELECT 1 FROM Aircraft_Seat_Map 
                         WHERE Model_ID = :model_id 
@@ -715,7 +1247,7 @@ def process_booking():
                         print(f"ERROR - Seat {seat_simple} not found in aircraft model {model_id}")
                         continue
                     
-                    # Get seat price
+                    # Get seat price - UPDATED
                     cursor.execute("""
                         SELECT Base_Price FROM Route_Pricing 
                         WHERE Route_ID = :route_id 
@@ -726,7 +1258,7 @@ def process_booking():
                     seat_price_result = cursor.fetchone()
                     seat_price = seat_price_result[0] if seat_price_result else base_price
                     
-                    # Create reservation
+                    # Create reservation - UPDATED
                     res_id = generate_sequential_id("RES", "Reservation", "Reservation_ID", cursor)
                     
                     print(f"DEBUG - Creating outbound reservation {i}: {res_id} for seat {row_num}{seat_letter}")
@@ -745,7 +1277,7 @@ def process_booking():
                     price=seat_price)
                     print(f"DEBUG - Outbound reservation {i} created successfully")
             
-            # Create reservations for return flight if applicable
+            # Create reservations for return flight if applicable - UPDATED
             if return_flight_id:
                 cursor.execute("""
                     SELECT fi.Model_ID, fr.Route_ID 
@@ -770,7 +1302,7 @@ def process_booking():
                         row_num = int(row_match.group())
                         seat_letter = letter_match.group()
                         
-                        # Verify seat exists in return aircraft model
+                        # Verify seat exists in return aircraft model - UPDATED
                         cursor.execute("""
                             SELECT 1 FROM Aircraft_Seat_Map 
                             WHERE Model_ID = :model_id 
@@ -782,7 +1314,7 @@ def process_booking():
                             print(f"ERROR - Return seat {seat_simple} not found in aircraft model {return_model_id}")
                             continue
                         
-                        # Get return seat price
+                        # Get return seat price - UPDATED
                         cursor.execute("""
                             SELECT Base_Price FROM Route_Pricing 
                             WHERE Route_ID = :route_id 
@@ -793,7 +1325,7 @@ def process_booking():
                         return_seat_price_result = cursor.fetchone()
                         return_seat_price = return_seat_price_result[0] if return_seat_price_result else base_price
                         
-                        # Create return reservation
+                        # Create return reservation - UPDATED
                         res_id = generate_sequential_id("RES", "Reservation", "Reservation_ID", cursor)
                         
                         print(f"DEBUG - Creating return reservation {i}: {res_id} for seat {row_num}{seat_letter}")
@@ -812,7 +1344,7 @@ def process_booking():
                         price=return_seat_price)
                         print(f"DEBUG - Return reservation {i} created successfully")
             
-            # Create initial payment record
+            # Create initial payment record - UPDATED
             payment_id = generate_sequential_id("PAY", "Payment", "Payment_ID", cursor)
             cursor.execute("""
                 INSERT INTO Payment 
@@ -821,7 +1353,7 @@ def process_booking():
             """,
             payment_id=payment_id,
             booking_id=booking_id,
-            amount=0)  # Initial payment amount 0, to be paid later
+            amount=total_amount)  # Set initial payment amount to total
             
             conn.commit()
             print(f"DEBUG - All database operations completed successfully!")
@@ -861,6 +1393,7 @@ def process_booking():
     except Exception as e:
         print("Booking processing error:", e)
         return render_template('error.html', error="Booking processing failed.")
+    
 
 @app.route('/download-tickets/<booking_id>')
 def download_tickets(booking_id):
@@ -869,10 +1402,10 @@ def download_tickets(booking_id):
     cursor = conn.cursor()
     
     try:
-        # Get booking and passenger details using new schema
+        # Get booking and passenger details using new schema - UPDATED
         cursor.execute("""
             SELECT b.Booking_ID, 
-                   p.Passenger_ID, p.First_Name, p.Last_Name, p.Email, p.Phone,
+                   p.Passenger_ID, p.First_Name, p.Last_Name, p.Title, p.Nationality,
                    r.Reservation_ID, r.Row_Number, r.Seat_Letter, r.Price_Charged,
                    fi.Instance_ID, fi.Model_ID,
                    TO_CHAR(fi.Departure_Time, 'DD-MON-YYYY HH24:MI'),
@@ -881,8 +1414,8 @@ def download_tickets(booking_id):
                    c1.City_Name, c2.City_Name,
                    arc.Class_ID
             FROM Booking b
-            JOIN Passenger p ON b.Booking_ID = p.Booking_ID
-            JOIN Reservation r ON p.Passenger_ID = r.Passenger_ID
+            JOIN Reservation r ON b.Booking_ID = r.Booking_ID
+            JOIN Passenger p ON r.Passenger_ID = p.Passenger_ID
             JOIN Flight_Instance fi ON r.Instance_ID = fi.Instance_ID
             JOIN Flight_Route fr ON fi.Route_ID = fr.Route_ID
             JOIN Airport a1 ON fr.Source_Airport = a1.Airport_ID
@@ -926,13 +1459,13 @@ def download_tickets(booking_id):
                 'passenger_id': row[1],           # Passenger_ID at index 1
                 'first_name': row[2],             # First_Name at index 2
                 'last_name': row[3],              # Last_Name at index 3
-                'email': row[4],                  # Email at index 4
-                'phone': row[5],                  # Phone at index 5
+                'title': row[4],                  # Title at index 4
+                'nationality': row[5],            # Nationality at index 5
                 'reservation_id': row[6],         # Reservation_ID at index 6
                 'row_number': row[7],             # Row_Number at index 7
                 'seat_letter': row[8],            # Seat_Letter at index 8
                 'seat_number': f"{row[7]}{row[8]}",  # Combine row number and seat letter
-                'seat_cost': float(row[9]),       # CORRECTED: Price_Charged at index 9, not 8
+                'seat_cost': float(row[9]),       # Price_Charged at index 9
             }
             passengers_data.append(passenger)
         
@@ -983,7 +1516,7 @@ def view_ticket(reservation_id):
     try:
         cursor.execute("""
             SELECT r.Reservation_ID, r.Booking_ID, r.Passenger_ID, r.Row_Number, r.Seat_Letter, r.Price_Charged,
-                   p.First_Name, p.Last_Name, p.Email, p.Phone,
+                   p.First_Name, p.Last_Name, p.Title, p.Nationality,
                    fi.Instance_ID, fi.Model_ID,
                    TO_CHAR(fi.Departure_Time, 'DD-MON-YYYY HH24:MI'),
                    TO_CHAR(fi.Arrival_Time, 'DD-MON-YYYY HH24:MI'),
@@ -1018,6 +1551,8 @@ def view_ticket(reservation_id):
             'seat_letter': ticket_data[4],
             'seat_cost': float(ticket_data[5]),
             'passenger_name': f"{ticket_data[6]} {ticket_data[7]}",
+            'title': ticket_data[8],
+            'nationality': ticket_data[9],
             'seat_number': f"{ticket_data[3]}{ticket_data[4]}",
             'flight_number': ticket_data[10],
             'aircraft_type': ticket_data[11],
@@ -1077,22 +1612,22 @@ def verify_booking():
     cursor = conn.cursor()
     
     try:
-        # Verify booking exists and email matches
+        # Verify booking exists and email matches - UPDATED
         cursor.execute("""
-            SELECT b.Booking_ID, b.Booking_Status, b.Contact_Email, b.Contact_Phone
+            SELECT b.Booking_ID, b.Booking_Status, b.Contact_Email, b.Emergency_Phone
             FROM Booking b
             WHERE b.Booking_ID = :booking_id 
-            AND (b.Contact_Email = :email OR b.Contact_Phone = :email)
+            AND (b.Contact_Email = :email OR b.Emergency_Phone = :email)
         """, booking_id=booking_id, email=email)
         
         booking = cursor.fetchone()
         if not booking:
             return render_template('error.html', error="Booking not found or contact information doesn't match")
         
-        # Get all reservations for this booking
+        # Get all reservations for this booking - UPDATED
         cursor.execute("""
             SELECT r.Reservation_ID, r.Passenger_ID, r.Instance_ID, r.Row_Number, r.Seat_Letter, r.Price_Charged,
-                   p.First_Name, p.Last_Name,
+                   p.First_Name, p.Last_Name, p.Title, p.Nationality,
                    fi.Departure_Time, fi.Arrival_Time,
                    a1.Airport_Name as Departure_Airport, a2.Airport_Name as Arrival_Airport,
                    c1.City_Name as Departure_City, c2.City_Name as Arrival_City,
@@ -1125,13 +1660,15 @@ def verify_booking():
                 'seat_letter': res[4],
                 'seat_cost': float(res[5]),
                 'passenger_name': f"{res[6]} {res[7]}",
-                'departure_time': res[8].strftime('%d-%b-%Y %H:%M'),
-                'arrival_time': res[9].strftime('%d-%b-%Y %H:%M'),
-                'departure_airport': res[10],
-                'arrival_airport': res[11],
-                'departure_city': res[12],
-                'arrival_city': res[13],
-                'travel_class': res[14],
+                'title': res[8],
+                'nationality': res[9],
+                'departure_time': res[10].strftime('%d-%b-%Y %H:%M'),
+                'arrival_time': res[11].strftime('%d-%b-%Y %H:%M'),
+                'departure_airport': res[12],
+                'arrival_airport': res[13],
+                'departure_city': res[14],
+                'arrival_city': res[15],
+                'travel_class': res[16],
                 'seat_number': f"{res[3]}{res[4]}"
             })
         
@@ -1189,7 +1726,7 @@ def cancel_reservations(reservation_ids, booking_id, email):
         total_refund = 0
         
         for res_id in reservation_ids:
-            # Get reservation details for cancellation log
+            # Get reservation details for cancellation log - UPDATED
             cursor.execute("""
                 SELECT r.Price_Charged, r.Passenger_ID, r.Instance_ID
                 FROM Reservation r
@@ -1219,7 +1756,7 @@ def cancel_reservations(reservation_ids, booking_id, email):
                     WHERE Reservation_ID = :res_id
                 """, res_id=res_id)
                 
-                # Log cancellation
+                # Log cancellation - UPDATED
                 cursor.execute("SELECT COUNT(*) FROM Cancellation_Log")
                 log_id = cursor.fetchone()[0] + 1
                 
@@ -1267,10 +1804,10 @@ def redirect_to_reschedule(reservation_id):
     cursor = conn.cursor()
     
     try:
-        # Get original reservation details for rescheduling
+        # Get original reservation details for rescheduling - UPDATED
         cursor.execute("""
             SELECT r.Reservation_ID, r.Booking_ID, r.Passenger_ID, r.Instance_ID, r.Row_Number, r.Seat_Letter, r.Price_Charged,
-                   p.First_Name, p.Last_Name,
+                   p.First_Name, p.Last_Name, p.Title, p.Nationality,
                    fi.Model_ID, fr.Source_Airport, fr.Dest_Airport,
                    fi.Departure_Time, fi.Arrival_Time,
                    a1.Airport_Name as Departure_Airport, a2.Airport_Name as Arrival_Airport,
@@ -1304,17 +1841,19 @@ def redirect_to_reschedule(reservation_id):
             'seat_letter': original_flight[5],
             'price_charged': float(original_flight[6]),
             'passenger_name': f"{original_flight[7]} {original_flight[8]}",
-            'model_id': original_flight[9],
-            'departure_airport_id': original_flight[10],
-            'arrival_airport_id': original_flight[11],
-            'departure_time': original_flight[12].strftime('%d-%b-%Y %H:%M'),
-            'arrival_time': original_flight[13].strftime('%d-%b-%Y %H:%M'),
-            'departure_airport': original_flight[14],
-            'arrival_airport': original_flight[15],
-            'departure_city': original_flight[16],
-            'arrival_city': original_flight[17],
-            'travel_class': original_flight[18],
-            'departure_date': original_flight[12].strftime('%Y-%m-%d')
+            'title': original_flight[9],
+            'nationality': original_flight[10],
+            'model_id': original_flight[11],
+            'departure_airport_id': original_flight[12],
+            'arrival_airport_id': original_flight[13],
+            'departure_time': original_flight[14].strftime('%d-%b-%Y %H:%M'),
+            'arrival_time': original_flight[15].strftime('%d-%b-%Y %H:%M'),
+            'departure_airport': original_flight[16],
+            'arrival_airport': original_flight[17],
+            'departure_city': original_flight[18],
+            'arrival_city': original_flight[19],
+            'travel_class': original_flight[20],
+            'departure_date': original_flight[14].strftime('%Y-%m-%d')
         }
         
         # Store the original booking ID in session for seat exclusion
@@ -1383,9 +1922,9 @@ def booking_actions():
     cursor = conn.cursor()
     
     try:
-        # Get booking info
+        # Get booking info - UPDATED
         cursor.execute("""
-            SELECT Booking_ID, Booking_Status, Contact_Email, Contact_Phone 
+            SELECT Booking_ID, Booking_Status, Contact_Email, Emergency_Phone 
             FROM Booking 
             WHERE Booking_ID = :booking_id
         """, booking_id=booking_id)
@@ -1394,10 +1933,10 @@ def booking_actions():
         if not booking:
             return render_template('error.html', error="Booking not found")
         
-        # Get all reservations for this booking
+        # Get all reservations for this booking - UPDATED
         cursor.execute("""
             SELECT r.Reservation_ID, r.Passenger_ID, r.Instance_ID, r.Row_Number, r.Seat_Letter, r.Price_Charged,
-                   p.First_Name, p.Last_Name,
+                   p.First_Name, p.Last_Name, p.Title, p.Nationality,
                    fi.Departure_Time, fi.Arrival_Time,
                    a1.Airport_Name as Departure_Airport, a2.Airport_Name as Arrival_Airport,
                    c1.City_Name as Departure_City, c2.City_Name as Arrival_City,
@@ -1430,13 +1969,15 @@ def booking_actions():
                 'seat_letter': res[4],
                 'seat_cost': float(res[5]),
                 'passenger_name': f"{res[6]} {res[7]}",
-                'departure_time': res[8].strftime('%d-%b-%Y %H:%M'),
-                'arrival_time': res[9].strftime('%d-%b-%Y %H:%M'),
-                'departure_airport': res[10],
-                'arrival_airport': res[11],
-                'departure_city': res[12],
-                'arrival_city': res[13],
-                'travel_class': res[14],
+                'title': res[8],
+                'nationality': res[9],
+                'departure_time': res[10].strftime('%d-%b-%Y %H:%M'),
+                'arrival_time': res[11].strftime('%d-%b-%Y %H:%M'),
+                'departure_airport': res[12],
+                'arrival_airport': res[13],
+                'departure_city': res[14],
+                'arrival_city': res[15],
+                'travel_class': res[16],
                 'seat_number': f"{res[3]}{res[4]}"
             })
         
@@ -1461,7 +2002,6 @@ def booking_actions():
         conn.close()
 
 @app.route('/complete-reschedule', methods=['POST'])
-@app.route('/complete-reschedule', methods=['POST'])
 def complete_reschedule():
     """Complete the reschedule process after seat selection"""
     reservation_id = session.get('reschedule_reservation_id')
@@ -1475,7 +2015,7 @@ def complete_reschedule():
     cursor = conn.cursor()
     
     try:
-        # Get original reservation details including booking info
+        # Get original reservation details including booking info - UPDATED
         cursor.execute("""
             SELECT r.Booking_ID, r.Passenger_ID, r.Price_Charged, r.Instance_ID,
                    fi.Model_ID as Old_Model_ID, fi.Route_ID as Old_Route_ID,
@@ -1519,7 +2059,7 @@ def complete_reschedule():
         new_model_id = new_flight_info[0]
         new_route_id = new_flight_info[1]
         
-        # Get new seat price using the correct travel class
+        # Get new seat price using the correct travel class - UPDATED
         cursor.execute("""
             SELECT Base_Price FROM Route_Pricing 
             WHERE Route_ID = :route_id 
@@ -1541,7 +2081,7 @@ def complete_reschedule():
         new_row_num = int(row_match.group())
         new_seat_letter = letter_match.group()
         
-        # Verify new seat exists
+        # Verify new seat exists - UPDATED
         cursor.execute("""
             SELECT 1 FROM Aircraft_Seat_Map 
             WHERE Model_ID = :model_id 
@@ -1577,7 +2117,7 @@ def complete_reschedule():
         print(f"  New Flight: {new_flight_id}")
         print(f"  New Seat: {new_row_num}{new_seat_letter}")
         
-        # Create new reservation
+        # Create new reservation - UPDATED
         cursor.execute("""
             INSERT INTO Reservation 
             (Reservation_ID, Booking_ID, Passenger_ID, Instance_ID, Row_Number, Seat_Letter, Price_Charged)
@@ -1703,5 +2243,67 @@ def debug_schema():
     
     return result
 
+@app.route('/debug-constraint')
+def debug_constraint():
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Find what constraint is causing the issue
+        cursor.execute("""
+            SELECT constraint_name, table_name, column_name 
+            FROM user_cons_columns 
+            WHERE constraint_name = 'SYS_C009170'
+        """)
+        constraint_info = cursor.fetchone()
+        
+        if constraint_info:
+            return f"Constraint {constraint_info[0]} is on table {constraint_info[1]}, column {constraint_info[2]}"
+        else:
+            return "Constraint not found"
+            
+    except Exception as e:
+        return f"Error: {e}"
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.route('/debug-app-user')
+def debug_app_user():
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Check the current maximum User_ID
+        cursor.execute("SELECT MAX(User_ID) FROM App_User")
+        max_id = cursor.fetchone()[0]
+        
+        # Check if there's an identity sequence issue
+        cursor.execute("""
+            SELECT sequence_name, last_number 
+            FROM user_sequences 
+            WHERE sequence_name LIKE '%USER%' OR sequence_name LIKE '%APP_USER%'
+        """)
+        sequences = cursor.fetchall()
+        
+        result = f"<h1>App_User Debug</h1>"
+        result += f"<p>Max User_ID: {max_id}</p>"
+        result += f"<h2>Sequences:</h2><ul>"
+        for seq in sequences:
+            result += f"<li>{seq[0]} - Last Number: {seq[1]}</li>"
+        result += "</ul>"
+        
+        return result
+        
+    except Exception as e:
+        return f"Error: {e}"
+    finally:
+        cursor.close()
+        conn.close()
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Uncomment the line below to run locally       
+    # app.run(debug=True)
+
+    # Run the app to be accessible over the network
+    app.run(debug=True, host='0.0.0.0', port=5000)
