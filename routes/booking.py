@@ -32,11 +32,17 @@ def seat_selection():
         
         # Store that this is a reschedule operation
         session['is_reschedule'] = True
+        passenger_data = None  # Reschedule doesn't need passenger data displayed
     else:
-        # Normal booking flow
+        # Normal booking flow - passenger data must exist
         flight_id = session.get('selected_outbound_flight')
         if not flight_id:
             return render_template('error.html', error="No flight selected")
+        
+        # Validate passenger data exists (NEW FLOW: passenger info collected before seat selection)
+        passenger_data = session.get('passenger_data')
+        if not passenger_data:
+            return redirect('/passenger-info')
     
     return_flight_id = session.get('selected_return_flight')
     passengers = int(session.get('passengers', 1))
@@ -48,50 +54,20 @@ def seat_selection():
     print(f"DEBUG - trip_type: {trip_type}")
     print(f"DEBUG - Reschedule mode: {reschedule_reservation_id is not None}")
     print(f"DEBUG - Flight ID: {flight_id}")
+    print(f"DEBUG - Passenger data: {passenger_data}")
     
     conn = get_connection()
     cursor = conn.cursor()
     
     try:
-        # Get outbound flight details using new schema
-        cursor.execute("""
-            SELECT fi.Instance_ID, fi.Model_ID, 
-                   c1.City_Name, c2.City_Name,
-                   TO_CHAR(fi.Departure_Time, 'DD-MON-YYYY HH24:MI')
-            FROM Flight_Instance fi
-            JOIN Flight_Route fr ON fi.Route_ID = fr.Route_ID
-            JOIN Airport a1 ON fr.Source_Airport = a1.Airport_ID
-            JOIN Airport a2 ON fr.Dest_Airport = a2.Airport_ID
-            JOIN Zip_Master zm1 ON a1.Zipcode = zm1.Zipcode
-            JOIN Zip_Master zm2 ON a2.Zipcode = zm2.Zipcode
-            JOIN City c1 ON zm1.City_ID = c1.City_ID
-            JOIN City c2 ON zm2.City_ID = c2.City_ID
-            WHERE fi.Instance_ID = :flight_id
-        """, flight_id=flight_id)
-        
-        outbound_flight = cursor.fetchone()
-        
+        # Get outbound flight details (reuse helper for consistency)
+        outbound_flight = _get_flight_details(cursor, flight_id)
         if not outbound_flight:
             return render_template('error.html', error="Outbound flight not found")
         
         return_flight = None
         if return_flight_id:
-            cursor.execute("""
-                SELECT fi.Instance_ID, fi.Model_ID, 
-                       c1.City_Name, c2.City_Name,
-                       TO_CHAR(fi.Departure_Time, 'DD-MON-YYYY HH24:MI')
-                FROM Flight_Instance fi
-                JOIN Flight_Route fr ON fi.Route_ID = fr.Route_ID
-                JOIN Airport a1 ON fr.Source_Airport = a1.Airport_ID
-                JOIN Airport a2 ON fr.Dest_Airport = a2.Airport_ID
-                JOIN Zip_Master zm1 ON a1.Zipcode = zm1.Zipcode
-                JOIN Zip_Master zm2 ON a2.Zipcode = zm2.Zipcode
-                JOIN City c1 ON zm1.City_ID = c1.City_ID
-                JOIN City c2 ON zm2.City_ID = c2.City_ID
-                WHERE fi.Instance_ID = :flight_id
-            """, flight_id=return_flight_id)
-            return_flight = cursor.fetchone()
-            
+            return_flight = _get_flight_details(cursor, return_flight_id)
             if not return_flight:
                 return render_template('error.html', error="Return flight not found")
         
@@ -167,7 +143,8 @@ def seat_selection():
                             passengers=passengers,
                             travel_class=travel_class,
                             trip_type=trip_type,
-                            is_reschedule=reschedule_reservation_id is not None)
+                            is_reschedule=reschedule_reservation_id is not None,
+                            passenger_data=passenger_data)
         
     except Exception as e:
         print("Error in seat selection:", e)
@@ -180,129 +157,157 @@ def seat_selection():
         conn.close()
 
 
+# Helper function to get flight details (reduces code duplication)
+def _get_flight_details(cursor, flight_id):
+    """Fetch flight details by Instance_ID. Returns tuple or None."""
+    cursor.execute("""
+        SELECT fi.Instance_ID, fi.Model_ID, 
+               c1.City_Name AS departure_city, c2.City_Name AS arrival_city,
+               TO_CHAR(fi.Departure_Time, 'DD-MON-YYYY HH24:MI') AS departure_time
+        FROM Flight_Instance fi
+        JOIN Flight_Route fr ON fi.Route_ID = fr.Route_ID
+        JOIN Airport a1 ON fr.Source_Airport = a1.Airport_ID
+        JOIN Airport a2 ON fr.Dest_Airport = a2.Airport_ID
+        JOIN Zip_Master zm1 ON a1.Zipcode = zm1.Zipcode
+        JOIN Zip_Master zm2 ON a2.Zipcode = zm2.Zipcode
+        JOIN City c1 ON zm1.City_ID = c1.City_ID
+        JOIN City c2 ON zm2.City_ID = c2.City_ID
+        WHERE fi.Instance_ID = :flight_id
+    """, flight_id=flight_id)
+    return cursor.fetchone()
+
+
 @booking_bp.route('/passenger-info', methods=['GET', 'POST'])
 def passenger_info():
-    if request.method == 'POST':
-        # Check if this is a reschedule operation
-        if session.get('is_reschedule'):
-            print("DEBUG - Detected reschedule operation, redirecting to complete_reschedule")
-            return redirect(url_for('management.complete_reschedule'))
-        
-        # Handle form submission from seat selection for NORMAL booking
-        selected_outbound_seats = request.form.getlist('selected_outbound_seats')
-        selected_return_seats = request.form.getlist('selected_return_seats')
-        
-        # Store in session for booking processing
-        session['selected_outbound_seats'] = selected_outbound_seats
-        session['selected_return_seats'] = selected_return_seats
-        
-        # Get flight details
-        flight_id = session.get('selected_outbound_flight')
-        return_flight_id = session.get('selected_return_flight')
-        passengers = int(session.get('passengers', 1))
-        travel_class = session.get('travel_class', 'ECO')
-        
-        conn = get_connection()
-        cursor = conn.cursor()
-        
-        try:
-            # Get outbound flight details
-            cursor.execute("""
-                SELECT fi.Instance_ID, fi.Model_ID, 
-                       c1.City_Name, c2.City_Name,
-                       TO_CHAR(fi.Departure_Time, 'DD-MON-YYYY HH24:MI')
-                FROM Flight_Instance fi
-                JOIN Flight_Route fr ON fi.Route_ID = fr.Route_ID
-                JOIN Airport a1 ON fr.Source_Airport = a1.Airport_ID
-                JOIN Airport a2 ON fr.Dest_Airport = a2.Airport_ID
-                JOIN Zip_Master zm1 ON a1.Zipcode = zm1.Zipcode
-                JOIN Zip_Master zm2 ON a2.Zipcode = zm2.Zipcode
-                JOIN City c1 ON zm1.City_ID = c1.City_ID
-                JOIN City c2 ON zm2.City_ID = c2.City_ID
-                WHERE fi.Instance_ID = :flight_id
-            """, flight_id=flight_id)
-            outbound_flight = cursor.fetchone()
-            
-            return_flight = None
-            if return_flight_id:
-                cursor.execute("""
-                    SELECT fi.Instance_ID, fi.Model_ID, 
-                           c1.City_Name, c2.City_Name,
-                           TO_CHAR(fi.Departure_Time, 'DD-MON-YYYY HH24:MI')
-                    FROM Flight_Instance fi
-                    JOIN Flight_Route fr ON fi.Route_ID = fr.Route_ID
-                    JOIN Airport a1 ON fr.Source_Airport = a1.Airport_ID
-                    JOIN Airport a2 ON fr.Dest_Airport = a2.Airport_ID
-                    JOIN Zip_Master zm1 ON a1.Zipcode = zm1.Zipcode
-                    JOIN Zip_Master zm2 ON a2.Zipcode = zm2.Zipcode
-                    JOIN City c1 ON zm1.City_ID = c1.City_ID
-                    JOIN City c2 ON zm2.City_ID = c2.City_ID
-                    WHERE fi.Instance_ID = :flight_id
-                """, flight_id=return_flight_id)
-                return_flight = cursor.fetchone()
-            
-            # Get user's contact information from session
-            user_email = session.get('user_email', '')
-            user_phone = session.get('user_phone', '')
-            
-            return render_template('passenger_info.html',
-                                outbound_flight=outbound_flight,
-                                return_flight=return_flight,
-                                selected_outbound_seats=selected_outbound_seats,
-                                selected_return_seats=selected_return_seats,
-                                passengers=passengers,
-                                travel_class=travel_class,
-                                user_email=user_email,
-                                user_phone=user_phone)
-            
-        except Exception as e:
-            print("Error in passenger info:", e)
-            return render_template('error.html', error="Error loading passenger information")
-            
-        finally:
-            cursor.close()
-            conn.close()
-    
-    else:
-        # GET request - redirect to seat selection if no seats selected
-        if 'selected_outbound_seats' not in session:
-            return redirect('/seat-selection')
-        
+    """
+    NEW FLOW: Passenger info is collected BEFORE seat selection.
+    GET: Display passenger form after flight selection
+    POST: Store passenger data in session, redirect to seat selection
+    """
+    # Check if this is a reschedule operation - reschedule has its own flow
+    if session.get('is_reschedule'):
         return redirect('/seat-selection')
+    
+    flight_id = session.get('selected_outbound_flight')
+    if not flight_id:
+        return render_template('error.html', error="No flight selected. Please search for a flight first.")
+    
+    return_flight_id = session.get('selected_return_flight')
+    passengers = int(session.get('passengers', 1))
+    travel_class = session.get('travel_class', 'ECO')
+    trip_type = session.get('trip_type', 'one_way')
+    
+    if request.method == 'POST':
+        # Collect and validate passenger data from form
+        contact_email = request.form.get('contact_email', '').strip()
+        contact_phone = request.form.get('contact_phone', '').strip()
+        
+        if not contact_email or not contact_phone:
+            return render_template('error.html', error="Contact email and phone are required.")
+        
+        passenger_data = []
+        for i in range(passengers):
+            pdata = {
+                'first_name': request.form.get(f'first_name_{i}', '').strip(),
+                'last_name': request.form.get(f'last_name_{i}', '').strip(),
+                'date_of_birth': request.form.get(f'date_of_birth_{i}', ''),
+                'gender': request.form.get(f'gender_{i}', ''),
+                'passport_number': request.form.get(f'passport_number_{i}', '').strip(),
+                'nationality': request.form.get(f'nationality_{i}', 'Pakistani').strip(),
+                'title': request.form.get(f'title_{i}', 'MR')
+            }
+            # Basic validation
+            if not pdata['first_name'] or not pdata['last_name'] or not pdata['date_of_birth'] or not pdata['gender']:
+                return render_template('error.html', error=f"Please fill all required fields for Passenger {i+1}.")
+            passenger_data.append(pdata)
+        
+        # Store passenger data in session for use in seat selection and booking
+        session['passenger_data'] = passenger_data
+        session['contact_email'] = contact_email
+        session['contact_phone'] = contact_phone
+        
+        print(f"DEBUG - Stored {len(passenger_data)} passengers in session")
+        print(f"DEBUG - Contact: {contact_email}, {contact_phone}")
+        
+        # Redirect to seat selection
+        return redirect('/seat-selection')
+    
+    # GET request - show passenger form
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        outbound_flight = _get_flight_details(cursor, flight_id)
+        if not outbound_flight:
+            return render_template('error.html', error="Outbound flight not found.")
+        
+        return_flight = None
+        if return_flight_id:
+            return_flight = _get_flight_details(cursor, return_flight_id)
+        
+        # Pre-fill with logged-in user's contact info if available
+        user_email = session.get('user_email', '')
+        user_phone = session.get('user_phone', '')
+        
+        # Check for existing passenger data (e.g., if user went back)
+        existing_passenger_data = session.get('passenger_data', [])
+        existing_contact_email = session.get('contact_email', user_email)
+        existing_contact_phone = session.get('contact_phone', user_phone)
+        
+        return render_template('passenger_info.html',
+                            outbound_flight=outbound_flight,
+                            return_flight=return_flight,
+                            passengers=passengers,
+                            travel_class=travel_class,
+                            trip_type=trip_type,
+                            user_email=existing_contact_email,
+                            user_phone=existing_contact_phone,
+                            existing_passenger_data=existing_passenger_data)
+        
+    except Exception as e:
+        print("Error in passenger info:", e)
+        import traceback
+        traceback.print_exc()
+        return render_template('error.html', error="Error loading passenger information.")
+        
+    finally:
+        cursor.close()
+        conn.close()
 
 
 @booking_bp.route('/process-booking', methods=['POST'])
 def process_booking():
     try:
-        # Get passenger data from form
-        passengers = int(session.get('passengers', 1))
-        passenger_data = []
+        # Get passenger data from SESSION (collected earlier in passenger_info)
+        passenger_data = session.get('passenger_data')
+        contact_email = session.get('contact_email')
+        contact_phone = session.get('contact_phone')
         
-        # Get contact information from separate fields
-        contact_email = request.form.get('contact_email')
-        contact_phone = request.form.get('contact_phone')
+        if not passenger_data or not contact_email or not contact_phone:
+            return render_template('error.html', error="Passenger data missing. Please start booking again.")
+        
+        passengers = len(passenger_data)
         
         print(f"DEBUG - Contact Email: {contact_email}")
         print(f"DEBUG - Contact Phone: {contact_phone}")
+        print(f"DEBUG - Passengers from session: {passengers}")
         
-        for i in range(passengers):
-            passenger_data.append({
-                'first_name': request.form.get(f'first_name_{i}'),
-                'last_name': request.form.get(f'last_name_{i}'),
-                'date_of_birth': request.form.get(f'date_of_birth_{i}'),
-                'gender': request.form.get(f'gender_{i}'),
-                'passport_number': request.form.get(f'passport_number_{i}', ''),
-                'nationality': request.form.get(f'nationality_{i}', 'US'),
-                'title': request.form.get(f'title_{i}', 'MR')
-            })
-        
-        # Get seat selections
+        # Get seat selections from FORM (submitted from seat_selection.html)
         selected_outbound_seats = request.form.getlist('selected_outbound_seats')
         selected_return_seats = request.form.getlist('selected_return_seats')
         outbound_flight_id = session.get('selected_outbound_flight')
         return_flight_id = session.get('selected_return_flight')
         trip_type = session.get('trip_type', 'one_way')
         travel_class = session.get('travel_class', 'ECO')
+        
+        # Validate seat count matches passenger count
+        if len(selected_outbound_seats) != passengers:
+            return render_template('error.html', 
+                error=f"Seat selection mismatch: {len(selected_outbound_seats)} seats for {passengers} passengers.")
+        
+        if trip_type == 'round_trip' and len(selected_return_seats) != passengers:
+            return render_template('error.html', 
+                error=f"Return seat selection mismatch: {len(selected_return_seats)} seats for {passengers} passengers.")
         
         print(f"DEBUG - Outbound flight: {outbound_flight_id}")
         print(f"DEBUG - Return flight: {return_flight_id}")

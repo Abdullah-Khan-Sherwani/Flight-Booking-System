@@ -380,7 +380,7 @@ def select_flight(flight_id):
     if session['trip_type'] == 'round_trip':
         return redirect('/return-flight-search')
     else:
-        return redirect('/seat-selection')
+        return redirect('/passenger-info')
 
 
 @flights_bp.route('/return-flight-search', methods=['GET', 'POST'])
@@ -468,7 +468,7 @@ def return_flight_search():
 @flights_bp.route('/select-return-flight/<flight_id>')
 def select_return_flight(flight_id):
     session['selected_return_flight'] = flight_id
-    return redirect('/seat-selection')
+    return redirect('/passenger-info')
 
 
 @flights_bp.route('/get-seat-status/<flight_id>')

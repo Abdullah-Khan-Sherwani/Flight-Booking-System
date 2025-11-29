@@ -130,17 +130,99 @@
             font-size: 12px;
             margin-bottom: 10px;
         }
+        .passenger-list {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        .passenger-list h5 {
+            margin-bottom: 12px;
+            color: #856404;
+        }
+        .passenger-badge {
+            display: inline-block;
+            background: #007bff;
+            color: white;
+            padding: 5px 12px;
+            border-radius: 20px;
+            margin: 3px;
+            font-size: 14px;
+        }
+        .seat-assignment-display {
+            margin-top: 10px;
+            padding: 10px;
+            background: #d4edda;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .step-indicator {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 30px;
+        }
+        .step {
+            display: flex;
+            align-items: center;
+            margin: 0 15px;
+        }
+        .step-number {
+            width: 35px;
+            height: 35px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        .step.active .step-number {
+            background: #007bff;
+            color: white;
+        }
+        .step.completed .step-number {
+            background: #28a745;
+            color: white;
+        }
+        .step.pending .step-number {
+            background: #e9ecef;
+            color: #6c757d;
+        }
+        .step-label {
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
 
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
     <div class="container">
-        <a class="navbar-brand" href="{{ url_for('home') }}">IAT Airlines</a>
+        <a class="navbar-brand" href="{{ url_for('auth.home') }}">IAT Airlines</a>
     </div>
 </nav>
 
 <div class="container mt-4">
+    <!-- Step Indicator -->
+    <div class="step-indicator">
+        <div class="step completed">
+            <div class="step-number">✓</div>
+            <span class="step-label">Select Flight</span>
+        </div>
+        <div class="step completed">
+            <div class="step-number">✓</div>
+            <span class="step-label">Passenger Details</span>
+        </div>
+        <div class="step active">
+            <div class="step-number">3</div>
+            <span class="step-label">Select Seats</span>
+        </div>
+        <div class="step pending">
+            <div class="step-number">4</div>
+            <span class="step-label">Confirm Booking</span>
+        </div>
+    </div>
+
     <h2>Select Your Seats 
         <span class="trip-type-badge {% if trip_type == 'round_trip' %}bg-warning{% else %}bg-info{% endif %} text-dark ms-2">
             {{ 'Round Trip' if trip_type == 'round_trip' else 'One Way' }}
@@ -210,12 +292,12 @@
     </div>
     {% endif %}
 
-    <div class="row mt-4">
+    <div class="row mt-4 mb-5">
         <div class="col-md-6">
-            <button class="btn btn-secondary w-100" onclick="history.back()">Back</button>
+            <button class="btn btn-secondary w-100" onclick="history.back()">← Back to Passenger Details</button>
         </div>
         <div class="col-md-6">
-            <button class="btn btn-primary w-100" onclick="confirmBooking()">Confirm</button>
+            <button class="btn btn-primary w-100" onclick="confirmBooking()">Continue to Booking Confirmation →</button>
         </div>
     </div>
 </div>
@@ -225,6 +307,15 @@
     const passengerCount = {{ passengers | default(1) }};
     const travelClass = '{{ travel_class | default("ECO") }}';
     const tripType = '{{ trip_type | default("one_way") }}';
+    
+    // Passenger names for display
+    const passengerNames = [
+        {% if passenger_data %}
+        {% for p in passenger_data %}
+        "{{ p.title }}. {{ p.first_name }} {{ p.last_name }}"{% if not loop.last %},{% endif %}
+        {% endfor %}
+        {% endif %}
+    ];
     
     // Get real booked seats from Flask
     const bookedSeatsOutbound = {{ booked_outbound_seats | tojson | safe }};
@@ -381,15 +472,40 @@
         return seat;
     }
 
-    // Update the update functions to show better debugging
+    // Update the update functions to show passenger-seat assignments
     function updateOutboundDisplay() {
         document.getElementById("selected-outbound").innerText = selectedOutbound.length ? selectedOutbound.join(", ") : "None";
         console.log('Current outbound selection:', selectedOutbound);
+        updateSeatAssignmentDisplay();
     }
 
     function updateReturnDisplay() {
         document.getElementById("selected-return").innerText = selectedReturn.length ? selectedReturn.join(", ") : "None";
         console.log('Current return selection:', selectedReturn);
+        updateSeatAssignmentDisplay();
+    }
+    
+    function updateSeatAssignmentDisplay() {
+        const display = document.getElementById('seat-assignments');
+        if (!display) return;
+        
+        if (selectedOutbound.length === 0) {
+            display.innerHTML = '<small>Select seats below. Seats will be assigned in the order passengers are listed.</small>';
+            return;
+        }
+        
+        let html = '<strong>Seat Assignments:</strong><br>';
+        for (let i = 0; i < passengerNames.length; i++) {
+            const outboundSeat = selectedOutbound[i] || '<em>Not selected</em>';
+            const returnSeat = tripType === 'round_trip' ? (selectedReturn[i] || '<em>Not selected</em>') : '';
+            
+            html += `<div style="margin: 5px 0;">Passenger ${i + 1} (${passengerNames[i]}): <strong>${outboundSeat}</strong>`;
+            if (tripType === 'round_trip') {
+                html += ` / <strong>${returnSeat}</strong> (return)`;
+            }
+            html += '</div>';
+        }
+        display.innerHTML = html;
     }
 
     function confirmBooking() {
@@ -405,8 +521,23 @@
                 return;
             }
         }
+        
+        // Show confirmation with seat assignments
+        let confirmMsg = 'Confirm seat assignments:\n\n';
+        for (let i = 0; i < passengerNames.length; i++) {
+            confirmMsg += `${passengerNames[i]}: Seat ${selectedOutbound[i]}`;
+            if (tripType === 'round_trip') {
+                confirmMsg += ` (outbound), Seat ${selectedReturn[i]} (return)`;
+            }
+            confirmMsg += '\n';
+        }
+        confirmMsg += '\nProceed to booking confirmation?';
+        
+        if (!confirm(confirmMsg)) {
+            return;
+        }
 
-        // Create a form and submit to the correct endpoint
+        // Create a form and submit to process-booking
         const form = document.createElement('form');
         form.method = 'POST';
         
@@ -419,9 +550,9 @@
             form.action = '/complete-reschedule';
             console.log('Submitting to reschedule endpoint');
         } else {
-            // For normal booking, submit to passenger-info
-            form.action = '/passenger-info';
-            console.log('Submitting to normal booking endpoint');
+            // For normal booking, submit to process-booking (new flow)
+            form.action = '/process-booking';
+            console.log('Submitting to process-booking endpoint');
         }
 
         // Add outbound seats

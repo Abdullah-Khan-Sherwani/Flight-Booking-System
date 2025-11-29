@@ -140,7 +140,7 @@
 							<ul class="dropdown">
 								<li><a href="{{ url_for('account_info') }}">Account</a></li>
 								<li><a href="{{ url_for('manage_bookings') }}">My Bookings</a></li>
-								<li><a href="{{ url_for('logout') }}">Logout</a></li>
+								<li><a href="{{ url_for('auth.logout') }}">Logout</a></li>
 							</ul>
 						</li>
 						{% elif session.is_guest %}
@@ -154,13 +154,13 @@
 								</div>
 							</a>
 							<ul class="dropdown">
-								<li><a href="{{ url_for('login') }}">Sign In</a></li>
-								<li><a href="{{ url_for('signup') }}">Create Account</a></li>
+								<li><a href="{{ url_for('auth.login') }}">Sign In</a></li>
+								<li><a href="{{ url_for('auth.signup') }}">Create Account</a></li>
 							</ul>
 						</li>
 						{% else %}
-						<li><a href="{{ url_for('login') }}">Login</a></li>
-						<li><a href="{{ url_for('signup') }}">Sign Up</a></li>
+						<li><a href="{{ url_for('auth.login') }}">Login</a></li>
+						<li><a href="{{ url_for('auth.signup') }}">Sign Up</a></li>
 						{% endif %}
 					</ul>	
 				</div>
@@ -185,7 +185,7 @@
 									<div class="tab-content">
 										<div class="tab-content-inner active" data-content="signup">
 											<h3 style="margin-bottom: 15px;">Book Your Flight</h3>
-											<form action="{{ url_for('search_flights') }}" method="post">
+											<form action="{{ url_for('flights.search_flights') }}" method="post">
 												<div class="row form-group" style="margin-bottom: 10px;">
 													<div class="col-md-12">
 														<label for="departure_city" style="margin-bottom: 3px;">From</label>

@@ -126,11 +126,11 @@
 							<ul class="dropdown">
 								<li><a href="{{ url_for('account_info') }}">Account</a></li>
 								<li><a href="{{ url_for('manage_bookings') }}">My Bookings</a></li>
-								<li><a href="{{ url_for('logout') }}">Logout</a></li>
+								<li><a href="{{ url_for('auth.logout') }}">Logout</a></li>
 							</ul>
 						</li>
 						{% else %}
-						<li><a href="{{ url_for('login') }}">Login</a></li>
+						<li><a href="{{ url_for('auth.login') }}">Login</a></li>
 						{% endif %}
 					</ul>	
 				</div>

@@ -180,6 +180,21 @@ def index():
     return render_template('index.html')
 
 
+@auth_bp.route('/guest-booking')
+def guest_booking():
+    """Redirect guest users to the main booking page"""
+    # Clear any existing user session to ensure guest mode
+    session.pop('user_id', None)
+    session.pop('user_email', None)
+    session.pop('user_phone', None)
+    session.pop('user_first_name', None)
+    
+    # Set a flag to indicate guest booking
+    session['is_guest'] = True
+    
+    return redirect(url_for('auth.index'))
+
+
 @auth_bp.route('/logout')
 def logout():
     session.clear()

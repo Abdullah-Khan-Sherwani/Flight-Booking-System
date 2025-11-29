@@ -69,7 +69,8 @@ def clear_booking_session(session):
         'selected_outbound_seats', 'selected_return_seats',
         'selected_outbound_flight', 'selected_return_flight',
         'search_travel_class', 'search_passengers', 'search_trip_type',
-        'travel_class', 'passengers', 'trip_type'
+        'travel_class', 'passengers', 'trip_type',
+        'passenger_data', 'contact_email', 'contact_phone'
     ]
     for key in keys_to_clear:
         session.pop(key, None)
@@ -83,7 +84,8 @@ def clear_reschedule_session(session):
         'selected_outbound_seats', 'selected_return_seats',
         'selected_outbound_flight', 'selected_return_flight',
         'search_travel_class', 'search_passengers', 'search_trip_type',
-        'travel_class', 'passengers', 'trip_type'
+        'travel_class', 'passengers', 'trip_type',
+        'passenger_data', 'contact_email', 'contact_phone'
     ]
     for key in keys_to_clear:
         session.pop(key, None)
