@@ -126,7 +126,7 @@
 						<li><a href="{{ url_for('pricing') }}">Fares</a></li>
 						<li><a href="{{ url_for('contact') }}">Contact</a></li>
 						
-						<!-- User Profile Section - MOVED TO THE RIGHT -->
+						<!-- User Profile Section -->
 						{% if session.user_first_name %}
 						<li class="has-dropdown">
 							<a href="#">
@@ -143,8 +143,24 @@
 								<li><a href="{{ url_for('logout') }}">Logout</a></li>
 							</ul>
 						</li>
+						{% elif session.is_guest %}
+						<li class="has-dropdown">
+							<a href="#">
+								<div style="display: inline-flex; align-items: center;">
+									<div style="width: 32px; height: 32px; background: #6c757d; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 14px; margin-right: 8px;">
+										G
+									</div>
+									Guest
+								</div>
+							</a>
+							<ul class="dropdown">
+								<li><a href="{{ url_for('login') }}">Sign In</a></li>
+								<li><a href="{{ url_for('signup') }}">Create Account</a></li>
+							</ul>
+						</li>
 						{% else %}
 						<li><a href="{{ url_for('login') }}">Login</a></li>
+						<li><a href="{{ url_for('signup') }}">Sign Up</a></li>
 						{% endif %}
 					</ul>	
 				</div>

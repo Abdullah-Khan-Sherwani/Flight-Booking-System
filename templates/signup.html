@@ -58,6 +58,19 @@
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(52, 152, 219, 0.4);
         }
+        .btn-guest {
+            background: #6c757d;
+            border: none;
+            padding: 12px;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        .btn-guest:hover {
+            background: #5a6268;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(108, 117, 125, 0.4);
+        }
         .login-link {
             color: #3498db;
             text-decoration: none;
@@ -70,6 +83,23 @@
             font-size: 12px;
             color: #6c757d;
             margin-top: 5px;
+        }
+        .divider {
+            display: flex;
+            align-items: center;
+            text-align: center;
+            margin: 20px 0;
+        }
+        .divider::before,
+        .divider::after {
+            content: '';
+            flex: 1;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .divider-text {
+            padding: 0 10px;
+            color: #6c757d;
+            font-size: 14px;
         }
     </style>
 </head>
@@ -168,6 +198,20 @@
 
                     <button type="submit" class="btn btn-signup w-100 text-white mb-3">Create Account</button>
                 </form>
+                
+                <div class="divider">
+                    <span class="divider-text">or</span>
+                </div>
+                
+                <div class="text-center mb-3">
+                    <p class="text-muted mb-3">Don't want to create an account?</p>
+                    <a href="{{ url_for('guest_booking') }}" class="btn btn-guest w-100 text-white">
+                        Continue as Guest
+                    </a>
+                    <small class="text-muted mt-2 d-block">
+                        You can book flights without creating an account. Just provide your contact information during booking.
+                    </small>
+                </div>
                 
                 <div class="text-center">
                     <p class="mb-0">Already have an account? 

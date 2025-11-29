@@ -88,13 +88,21 @@
         </div>
     </div>
 
+    <!-- Add this after the Flight Summary section -->
+    {% if is_guest %}
+    <div class="alert alert-info">
+        <h6><i class="bi bi-info-circle"></i> Guest Booking</h6>
+        <p class="mb-0">You are booking as a guest. Please provide your contact information below. You can create an account later to manage your bookings more easily.</p>
+    </div>
+    {% endif %}
+
     <form action="{{ url_for('process_booking') }}" method="post" id="passengerForm">
         <!-- Contact Information Section -->
         <div class="passenger-form-container mb-4">
             <div class="passenger-section">
                 <div class="passenger-header">
                     <h5 class="mb-0">Contact Information</h5>
-                    <small>Primary contact for this booking</small>
+                    <small>Primary contact for this booking {% if is_guest %}(required){% endif %}</small>
                 </div>
                 <div class="row">
                     <div class="col-md-6 mb-3">
@@ -103,7 +111,7 @@
                             name="contact_email" required maxlength="100"
                             placeholder="Enter your email address"
                             value="{{ user_email }}">
-                        <div class="form-text">Your account email (can be changed for this booking)</div>
+                        <div class="form-text">Booking confirmation will be sent to this email</div>
                     </div>
                     <div class="col-md-6 mb-3">
                         <label for="contact_phone" class="form-label">Emergency Phone *</label>
@@ -111,7 +119,7 @@
                             name="contact_phone" required maxlength="20"
                             placeholder="Enter emergency phone number"
                             value="{{ user_phone }}">
-                        <div class="form-text">Your account phone number (can be changed for this booking)</div>
+                        <div class="form-text">Required for flight updates and emergencies</div>
                     </div>
                 </div>
             </div>

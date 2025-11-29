@@ -184,42 +184,74 @@ class TicketGenerator:
         
         ticket_files = []
         
+        # Determine if this is outbound or return based on booking_data
+        is_return = booking_data.get('flight_type') == 'RETURN'
+        
+        print(f"DEBUG - Generating tickets for {len(booking_data['passengers'])} passengers, Flight Type: {booking_data.get('flight_type')}")
+        
         for i, passenger in enumerate(booking_data['passengers']):
             ticket_id = f"TKT{datetime.now().strftime('%Y%m%d%H%M%S')}{i:03d}"
             
-            # Debug: Print passenger data to identify the issue
-            print(f"DEBUG - Passenger {i} data: {passenger}")
+            if is_return:
+                # Return flight data
+                ticket_data = {
+                    'ticket_id': ticket_id,
+                    'booking_id': booking_data['booking_id'],
+                    'reservation_id': passenger.get('reservation_id', f"RES{datetime.now().strftime('%Y%m%d%H%M%S')}{i:03d}"),
+                    'passenger_id': passenger.get('passenger_id', i + 1),
+                    'passenger_first_name': passenger['first_name'],
+                    'passenger_last_name': passenger['last_name'],
+                    'passenger_title': passenger.get('title', ''),
+                    'passenger_nationality': passenger.get('nationality', ''),
+                    'flight_number': booking_data.get('return_flight_number', 'N/A'),
+                    'departure_city': booking_data.get('return_departure_city', ''),
+                    'arrival_city': booking_data.get('return_arrival_city', ''),
+                    'departure_airport': booking_data.get('return_departure_airport', ''),
+                    'arrival_airport': booking_data.get('return_arrival_airport', ''),
+                    'departure_time': booking_data.get('return_departure_time', ''),
+                    'arrival_time': booking_data.get('return_arrival_time', ''),
+                    'flight_date': booking_data.get('return_flight_date', ''),
+                    'seat_number': passenger['seat_number'],
+                    'travel_class': booking_data['travel_class'],
+                    'aircraft_type': booking_data.get('return_aircraft_type', 'N/A'),
+                    'flight_type': 'RETURN',
+                    'seat_cost': float(passenger.get('seat_cost', 0)),
+                }
+                
+                filename = f"{output_dir}/{ticket_data['booking_id']}_{ticket_data['passenger_last_name']}_RETURN_{i+1}.pdf"
+            else:
+                # Outbound flight data
+                ticket_data = {
+                    'ticket_id': ticket_id,
+                    'booking_id': booking_data['booking_id'],
+                    'reservation_id': passenger.get('reservation_id', f"RES{datetime.now().strftime('%Y%m%d%H%M%S')}{i:03d}"),
+                    'passenger_id': passenger.get('passenger_id', i + 1),
+                    'passenger_first_name': passenger['first_name'],
+                    'passenger_last_name': passenger['last_name'],
+                    'passenger_title': passenger.get('title', ''),
+                    'passenger_nationality': passenger.get('nationality', ''),
+                    'flight_number': booking_data.get('outbound_flight_number', booking_data.get('flight_number', 'N/A')),
+                    'departure_city': booking_data['departure_city'],
+                    'arrival_city': booking_data['arrival_city'],
+                    'departure_airport': booking_data.get('departure_airport', ''),
+                    'arrival_airport': booking_data.get('arrival_airport', ''),
+                    'departure_time': booking_data['departure_time'],
+                    'arrival_time': booking_data['arrival_time'],
+                    'flight_date': booking_data['flight_date'],
+                    'seat_number': passenger['seat_number'],
+                    'travel_class': booking_data['travel_class'],
+                    'aircraft_type': booking_data.get('aircraft_type', 'N/A'),
+                    'flight_type': 'OUTBOUND',
+                    'seat_cost': float(passenger.get('seat_cost', 0)),
+                }
+                
+                filename = f"{output_dir}/{ticket_data['booking_id']}_{ticket_data['passenger_last_name']}_OUTBOUND_{i+1}.pdf"
             
-            # Create ticket data with new schema structure
-            ticket_data = {
-                'ticket_id': ticket_id,
-                'booking_id': booking_data['booking_id'],
-                'reservation_id': passenger.get('reservation_id', f"RES{datetime.now().strftime('%Y%m%d%H%M%S')}{i:03d}"),
-                'passenger_id': passenger.get('passenger_id', i + 1),
-                'passenger_first_name': passenger['first_name'],
-                'passenger_last_name': passenger['last_name'],
-                'passenger_title': passenger.get('title', ''),
-                'passenger_nationality': passenger.get('nationality', ''),
-                'flight_number': booking_data.get('flight_number', booking_data.get('instance_id', 'N/A')),
-                'departure_city': booking_data['departure_city'],
-                'arrival_city': booking_data['arrival_city'],
-                'departure_airport': booking_data.get('departure_airport', ''),
-                'arrival_airport': booking_data.get('arrival_airport', ''),
-                'departure_time': booking_data['departure_time'],
-                'arrival_time': booking_data['arrival_time'],
-                'flight_date': booking_data['flight_date'],
-                'seat_number': passenger['seat_number'],
-                'travel_class': booking_data['travel_class'],
-                'aircraft_type': booking_data.get('aircraft_type', 'N/A'),
-                'flight_type': booking_data.get('flight_type', 'ONE-WAY'),
-                'seat_cost': float(passenger.get('seat_cost', 0)),  # Ensure this is a float
-            }
-            
-            filename = f"{output_dir}/{ticket_data['booking_id']}_{ticket_data['passenger_last_name']}_{i+1}.pdf"
             self.generate_ticket(ticket_data, filename)
             ticket_files.append(filename)
             
-            print(f"Generated ticket: {filename}")
+            flight_type = "RETURN" if is_return else "OUTBOUND"
+            print(f"Generated {flight_type} ticket: {filename}")
         
         return ticket_files
 
