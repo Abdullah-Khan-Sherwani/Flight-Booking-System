@@ -23,7 +23,7 @@
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container">
-            <a class="navbar-brand" href="{{ url_for('home') }}">IAT Airlines</a>
+            <a class="navbar-brand" href="{{ url_for('auth.home') }}">IAT Airlines</a>
         </div>
     </nav>
 
@@ -64,14 +64,14 @@
                     </div>
 
                     <div class="mt-4">
-                        <a href="{{ url_for('view_ticket', reservation_id=new_reservation_id) }}" class="btn btn-primary me-2">
+                        <a href="{{ url_for('booking.view_ticket', reservation_id=new_reservation_id) }}" class="btn btn-primary me-2">
                             View New Ticket
                         </a>
-                        <a href="{{ url_for('download_tickets', booking_id=booking_id) }}" class="btn btn-success me-2">
+                        <a href="{{ url_for('booking.download_tickets', booking_id=booking_id) }}" class="btn btn-success me-2">
                             Download All Tickets
                         </a>
-                        <a href="{{ url_for('manage_bookings') }}" class="btn btn-secondary me-2">Manage Bookings</a>
-                        <a href="{{ url_for('home') }}" class="btn btn-outline-secondary">Back to Home</a>
+                        <a href="{{ url_for('management.manage_bookings') }}" class="btn btn-secondary me-2">Manage Bookings</a>
+                        <a href="{{ url_for('auth.home') }}" class="btn btn-outline-secondary">Back to Home</a>
                     </div>
                 </div>
             </div>

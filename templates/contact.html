@@ -96,11 +96,11 @@
 		<div class="gtco-container">
 			<div class="row">
 				<div class="col-sm-4 col-xs-12">
-					<div id="gtco-logo"><a href="{{ url_for('dashboard') }}">IAT Airlines <em>.</em></a></div>
+					<div id="gtco-logo"><a href="{{ url_for('auth.dashboard') }}">IAT Airlines <em>.</em></a></div>
 				</div>
 				<div class="col-xs-8 text-right menu-1">
 					<ul>
-						<li><a href="{{ url_for('manage_bookings') }}">Manage Bookings</a></li>
+						<li><a href="{{ url_for('management.manage_bookings') }}">Manage Bookings</a></li>
 						<li class="has-dropdown">
 							<a href="#">Book Travel</a>
 							<ul class="dropdown">
@@ -109,8 +109,8 @@
 								<li><a href="#">Multi City</a></li>
 							</ul>
 						</li>
-						<li><a href="{{ url_for('pricing') }}">Fares</a></li>
-						<li class="active"><a href="{{ url_for('contact') }}">Contact</a></li>
+						<li><a href="{{ url_for('flights.pricing') }}">Fares</a></li>
+						<li class="active"><a href="{{ url_for('auth.contact') }}">Contact</a></li>
 						
 						<!-- User Profile Section -->
 						{% if session.user_first_name %}
@@ -124,13 +124,13 @@
 								</div>
 							</a>
 							<ul class="dropdown">
-								<li><a href="{{ url_for('account_info') }}">Account</a></li>
-								<li><a href="{{ url_for('manage_bookings') }}">My Bookings</a></li>
-								<li><a href="{{ url_for('logout') }}">Logout</a></li>
+								<li><a href="{{ url_for('auth.account_info') }}">Account</a></li>
+								<li><a href="{{ url_for('management.manage_bookings') }}">My Bookings</a></li>
+								<li><a href="{{ url_for('auth.logout') }}">Logout</a></li>
 							</ul>
 						</li>
 						{% else %}
-						<li><a href="{{ url_for('login') }}">Login</a></li>
+						<li><a href="{{ url_for('auth.login') }}">Login</a></li>
 						{% endif %}
 					</ul>	
 				</div>
@@ -256,8 +256,8 @@
 					<div class="contact-info-box">
 						<h3>Quick Help</h3>
 						<ul class="gtco-footer-links">
-							<li><a href="{{ url_for('manage_bookings') }}">Manage My Booking</a></li>
-							<li><a href="{{ url_for('pricing') }}">Check Flight Fares</a></li>
+							<li><a href="{{ url_for('management.manage_bookings') }}">Manage My Booking</a></li>
+							<li><a href="{{ url_for('flights.pricing') }}">Check Flight Fares</a></li>
 							<li><a href="#">Flight Status</a></li>
 							<li><a href="#">Baggage Information</a></li>
 							<li><a href="#">Special Assistance</a></li>

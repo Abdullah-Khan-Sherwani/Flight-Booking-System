@@ -60,7 +60,7 @@
 
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
     <div class="container">
-        <a class="navbar-brand" href="{{ url_for('home') }}">IAT Airlines</a>
+        <a class="navbar-brand" href="{{ url_for('auth.home') }}">IAT Airlines</a>
     </div>
 </nav>
 
@@ -96,11 +96,11 @@
                 <p>Unique Reservation IDs have been generated for each passenger for future modifications.</p>
                 
                 <div class="action-buttons">
-                    <a href="{{ url_for('download_tickets', booking_id=booking_id) }}" 
+                    <a href="{{ url_for('booking.download_tickets', booking_id=booking_id) }}" 
                        class="btn btn-download me-3" id="downloadButton">
                         <i class="fas fa-download me-2"></i>Download All Tickets
                     </a>
-                    <a href="{{ url_for('home') }}" class="btn btn-primary">
+                    <a href="{{ url_for('auth.home') }}" class="btn btn-primary">
                         <i class="fas fa-home me-2"></i>Return to Home
                     </a>
                 </div>

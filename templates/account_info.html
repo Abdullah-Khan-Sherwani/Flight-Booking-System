@@ -211,11 +211,11 @@
 		<div class="gtco-container">
 			<div class="row">
 				<div class="col-sm-4 col-xs-12">
-					<div id="gtco-logo"><a href="{{ url_for('dashboard') }}">IAT Airlines <em>.</em></a></div>
+					<div id="gtco-logo"><a href="{{ url_for('auth.dashboard') }}">IAT Airlines <em>.</em></a></div>
 				</div>
 				<div class="col-xs-8 text-right menu-1">
 					<ul>
-						<li><a href="{{ url_for('manage_bookings') }}">Manage Bookings</a></li>
+						<li><a href="{{ url_for('management.manage_bookings') }}">Manage Bookings</a></li>
 						<li class="has-dropdown">
 							<a href="#">Book Travel</a>
 							<ul class="dropdown">
@@ -224,8 +224,8 @@
 								<li><a href="#">Multi City</a></li>
 							</ul>
 						</li>
-						<li><a href="{{ url_for('pricing') }}">Fares</a></li>
-						<li><a href="{{ url_for('contact') }}">Contact</a></li>
+						<li><a href="{{ url_for('flights.pricing') }}">Fares</a></li>
+						<li><a href="{{ url_for('auth.contact') }}">Contact</a></li>
 						
 						<!-- User Profile Section -->
 						{% if session.user_first_name %}
@@ -239,13 +239,13 @@
 								</div>
 							</a>
 							<ul class="dropdown">
-								<li><a href="{{ url_for('account_info') }}">Account</a></li>
-								<li><a href="{{ url_for('manage_bookings') }}">My Bookings</a></li>
-								<li><a href="{{ url_for('logout') }}">Logout</a></li>
+								<li><a href="{{ url_for('auth.account_info') }}">Account</a></li>
+								<li><a href="{{ url_for('management.manage_bookings') }}">My Bookings</a></li>
+								<li><a href="{{ url_for('auth.logout') }}">Logout</a></li>
 							</ul>
 						</li>
 						{% else %}
-						<li><a href="{{ url_for('login') }}">Login</a></li>
+						<li><a href="{{ url_for('auth.login') }}">Login</a></li>
 						{% endif %}
 					</ul>	
 				</div>
@@ -344,10 +344,10 @@
 							</div>
 						</div>
 
-						<div class="text-center" style="margin-top: 30px;">
-							<a href="{{ url_for('dashboard') }}" class="btn btn-primary">Back to Dashboard</a>
-							<a href="{{ url_for('manage_bookings') }}" class="btn btn-default">View My Bookings</a>
-						</div>
+							<div class="text-center" style="margin-top: 30px;">
+								<a href="{{ url_for('auth.dashboard') }}" class="btn btn-primary">Back to Dashboard</a>
+								<a href="{{ url_for('management.manage_bookings') }}" class="btn btn-default">View My Bookings</a>
+							</div>
 					</div>
 				</div>
 			</div>

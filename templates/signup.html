@@ -89,7 +89,7 @@
                 </div>
                 {% endif %}
                 
-                <form method="POST" action="{{ url_for('signup') }}">
+                <form method="POST" action="{{ url_for('auth.signup') }}">
                     <!-- Personal Information -->
                     <div class="row">
                         <div class="col-md-3 mb-3">
@@ -171,7 +171,7 @@
                 
                 <div class="text-center">
                     <p class="mb-0">Already have an account? 
-                        <a href="{{ url_for('login') }}" class="login-link">Sign In</a>
+                        <a href="{{ url_for('auth.login') }}" class="login-link">Sign In</a>
                     </p>
                 </div>
             </div>

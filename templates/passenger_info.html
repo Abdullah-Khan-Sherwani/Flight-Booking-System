@@ -52,7 +52,7 @@
 
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
     <div class="container">
-        <a class="navbar-brand" href="{{ url_for('home') }}">IAT Airlines</a>
+        <a class="navbar-brand" href="{{ url_for('auth.home') }}">IAT Airlines</a>
     </div>
 </nav>
 
@@ -88,7 +88,7 @@
         </div>
     </div>
 
-    <form action="{{ url_for('process_booking') }}" method="post" id="passengerForm">
+    <form action="{{ url_for('booking.process_booking') }}" method="post" id="passengerForm">
         <!-- Contact Information Section -->
         <div class="passenger-form-container mb-4">
             <div class="passenger-section">

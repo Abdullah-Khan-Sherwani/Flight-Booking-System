@@ -25,7 +25,7 @@
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container">
-            <a class="navbar-brand" href="{{ url_for('home') }}">IAT Airlines</a>
+            <a class="navbar-brand" href="{{ url_for('auth.home') }}">IAT Airlines</a>
         </div>
     </nav>
 
@@ -59,7 +59,7 @@
                     </div>
                     <div class="col-md-4 text-end">
                         <!-- FIXED: Pass the correct travel class code -->
-                        <a href="{{ url_for('select_flight', flight_id=flight[0]) }}?trip_type={{ search_criteria.trip_type }}&passengers={{ search_criteria.passengers }}&travel_class={% if search_criteria.travel_class == 'Economy' %}ECO{% elif search_criteria.travel_class == 'Business' %}BUS{% elif search_criteria.travel_class == 'First Class' %}FIR{% else %}ECO{% endif %}" 
+                        <a href="{{ url_for('flights.select_flight', flight_id=flight[0]) }}?trip_type={{ search_criteria.trip_type }}&passengers={{ search_criteria.passengers }}&travel_class={% if search_criteria.travel_class == 'Economy' %}ECO{% elif search_criteria.travel_class == 'Business' %}BUS{% elif search_criteria.travel_class == 'First Class' %}FIR{% else %}ECO{% endif %}" 
                            class="btn btn-primary btn-lg">
                             Select Flight
                         </a>
@@ -76,12 +76,12 @@
                     <li>Alternative routes</li>
                     <li>Later departure times</li>
                 </ul>
-                <a href="{{ url_for('home') }}" class="btn btn-secondary mt-2">Search Again</a>
+                <a href="{{ url_for('auth.home') }}" class="btn btn-secondary mt-2">Search Again</a>
             </div>
         {% endif %}
         
         <div class="mt-3">
-            <a href="{{ url_for('home') }}" class="btn btn-outline-secondary">← Back to Home</a>
+            <a href="{{ url_for('auth.home') }}" class="btn btn-outline-secondary">← Back to Home</a>
         </div>
     </div>
 
