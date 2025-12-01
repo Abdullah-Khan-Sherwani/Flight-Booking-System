@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Passenger Information - IAT Airlines</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         body {
             background: #f5f5f5;
@@ -87,7 +88,7 @@
 
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
     <div class="container">
-        <a class="navbar-brand" href="{{ url_for('auth.home') }}">IAT Airlines</a>
+        <a class="navbar-brand" href="{{ url_for('home') }}">IAT Airlines</a>
     </div>
 </nav>
 
@@ -136,7 +137,7 @@
                 {% elif travel_class == 'BUS' %}Business Class  
                 {% elif travel_class == 'ECO' %}Economy Class
                 {% endif %}
-                | <strong>Passengers:</strong> {{ passengers }}
+                | <strong>Passengers:</strong> <span id="passengerCountDisplay">1</span>
                 | <strong>Trip Type:</strong> {{ 'Round Trip' if trip_type == 'round_trip' else 'One Way' }}
             </div>
         </div>
@@ -145,12 +146,14 @@
     <!-- Guest booking info -->
     {% if is_guest %}
     <div class="alert alert-info">
-        <h6><i class="bi bi-info-circle"></i> Guest Booking</h6>
+        <h6><i class="fas fa-info-circle"></i> Guest Booking</h6>
         <p class="mb-0">You are booking as a guest. Please provide your contact information below. You can create an account later to manage your bookings more easily.</p>
     </div>
     {% endif %}
 
-    <form action="{{ url_for('booking.passenger_info') }}" method="post" id="passengerForm">
+    <form action="{{ url_for('passenger_info') }}" method="post" id="passengerForm">
+        <input type="hidden" id="passengerCount" name="passenger_count" value="1">
+        
         <!-- Contact Information Section -->
         <div class="passenger-form-container mb-4">
             <div class="passenger-section">
@@ -179,94 +182,100 @@
             </div>
         </div>
 
-        {% for i in range(passengers) %}
-        <div class="passenger-form-container">
-            <div class="passenger-section">
-                <div class="passenger-header">
-                    <h5 class="mb-0">Passenger {{ i + 1 }} of {{ passengers }}</h5>
-                    <small>Enter details exactly as they appear on travel documents</small>
-                </div>
-                
-                <!-- Title and Personal Information -->
-                <div class="row">
-                    <div class="col-md-3 mb-3">
-                        <label for="title_{{ i }}" class="form-label">Title *</label>
-                        <select class="form-select" id="title_{{ i }}" name="title_{{ i }}" required>
-                            <option value="">Select Title</option>
-                            <option value="MR" {% if existing_passenger_data and existing_passenger_data[i] and existing_passenger_data[i].title == 'MR' %}selected{% endif %}>Mr.</option>
-                            <option value="MS" {% if existing_passenger_data and existing_passenger_data[i] and existing_passenger_data[i].title == 'MS' %}selected{% endif %}>Ms.</option>
-                            <option value="MRS" {% if existing_passenger_data and existing_passenger_data[i] and existing_passenger_data[i].title == 'MRS' %}selected{% endif %}>Mrs.</option>
-                            <option value="DR" {% if existing_passenger_data and existing_passenger_data[i] and existing_passenger_data[i].title == 'DR' %}selected{% endif %}>Dr.</option>
-                            <option value="MX" {% if existing_passenger_data and existing_passenger_data[i] and existing_passenger_data[i].title == 'MX' %}selected{% endif %}>Mx.</option>
-                            <option value="CHD" {% if existing_passenger_data and existing_passenger_data[i] and existing_passenger_data[i].title == 'CHD' %}selected{% endif %}>Child</option>
-                            <option value="INF" {% if existing_passenger_data and existing_passenger_data[i] and existing_passenger_data[i].title == 'INF' %}selected{% endif %}>Infant</option>
-                        </select>
+        <!-- Passenger Forms Container -->
+        <div id="passengerFormsContainer">
+            <!-- First passenger form will be here by default -->
+            <div class="passenger-form-container">
+                <div class="passenger-section">
+                    <div class="passenger-header">
+                        <h5 class="mb-0">Passenger 1</h5>
+                        <small>Enter details exactly as they appear on travel documents</small>
                     </div>
-                    <div class="col-md-4 mb-3">
-                        <label for="first_name_{{ i }}" class="form-label">First Name *</label>
-                        <input type="text" class="form-control" id="first_name_{{ i }}" 
-                               name="first_name_{{ i }}" required maxlength="50"
-                               value="{% if existing_passenger_data and existing_passenger_data[i] %}{{ existing_passenger_data[i].first_name }}{% endif %}">
-                    </div>
-                    <div class="col-md-5 mb-3">
-                        <label for="last_name_{{ i }}" class="form-label">Last Name *</label>
-                        <input type="text" class="form-control" id="last_name_{{ i }}" 
-                               name="last_name_{{ i }}" required maxlength="50"
-                               value="{% if existing_passenger_data and existing_passenger_data[i] %}{{ existing_passenger_data[i].last_name }}{% endif %}">
-                </div>
-
-                <!-- Date of Birth, Gender, and Nationality -->
-                <div class="row">
-                    <div class="col-md-4 mb-3">
-                        <label for="date_of_birth_{{ i }}" class="form-label">Date of Birth *</label>
-                        <input type="date" class="form-control" id="date_of_birth_{{ i }}" 
-                               name="date_of_birth_{{ i }}" required
-                               value="{% if existing_passenger_data and existing_passenger_data[i] %}{{ existing_passenger_data[i].date_of_birth }}{% endif %}">
-                    </div>
-                    <div class="col-md-4 mb-3">
-                        <label class="form-label">Gender *</label>
-                        <div>
-                            <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="radio" name="gender_{{ i }}" id="gender_m_{{ i }}" value="MALE" required
-                                       {% if existing_passenger_data and existing_passenger_data[i] and existing_passenger_data[i].gender == 'MALE' %}checked{% endif %}>
-                                <label class="form-check-label" for="gender_m_{{ i }}">Male</label>
-                            </div>
-                            <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="radio" name="gender_{{ i }}" id="gender_f_{{ i }}" value="FEMALE"
-                                       {% if existing_passenger_data and existing_passenger_data[i] and existing_passenger_data[i].gender == 'FEMALE' %}checked{% endif %}>
-                                <label class="form-check-label" for="gender_f_{{ i }}">Female</label>
-                            </div>
-                            <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="radio" name="gender_{{ i }}" id="gender_o_{{ i }}" value="OTHER"
-                                       {% if existing_passenger_data and existing_passenger_data[i] and existing_passenger_data[i].gender == 'OTHER' %}checked{% endif %}>
-                                <label class="form-check-label" for="gender_o_{{ i }}">Other</label>
-                            </div>
+                    
+                    <!-- Title and Personal Information -->
+                    <div class="row">
+                        <div class="col-md-3 mb-3">
+                            <label for="title_0" class="form-label">Title *</label>
+                            <select class="form-select" id="title_0" name="title_0" required>
+                                <option value="">Select Title</option>
+                                <option value="MR">Mr.</option>
+                                <option value="MS">Ms.</option>
+                                <option value="MRS">Mrs.</option>
+                                <option value="DR">Dr.</option>
+                                <option value="MX">Mx.</option>
+                                <option value="CHD">Child</option>
+                                <option value="INF">Infant</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="first_name_0" class="form-label">First Name *</label>
+                            <input type="text" class="form-control" id="first_name_0" 
+                                   name="first_name_0" required maxlength="50">
+                        </div>
+                        <div class="col-md-5 mb-3">
+                            <label for="last_name_0" class="form-label">Last Name *</label>
+                            <input type="text" class="form-control" id="last_name_0" 
+                                   name="last_name_0" required maxlength="50">
                         </div>
                     </div>
-                    <div class="col-md-4 mb-3">
-                        <label for="nationality_{{ i }}" class="form-label">Nationality *</label>
-                        <input type="text" class="form-control" id="nationality_{{ i }}" 
-                               name="nationality_{{ i }}" required maxlength="50"
-                               placeholder="e.g., Pakistani, American"
-                               value="{% if existing_passenger_data and existing_passenger_data[i] %}{{ existing_passenger_data[i].nationality }}{% else %}Pakistani{% endif %}">
+
+                    <!-- Date of Birth, Gender, and Nationality -->
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label for="date_of_birth_0" class="form-label">Date of Birth *</label>
+                            <input type="date" class="form-control" id="date_of_birth_0" 
+                                   name="date_of_birth_0" required>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Gender *</label>
+                            <div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="gender_0" id="gender_m_0" value="MALE" required>
+                                    <label class="form-check-label" for="gender_m_0">Male</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="gender_0" id="gender_f_0" value="FEMALE">
+                                    <label class="form-check-label" for="gender_f_0">Female</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="gender_0" id="gender_o_0" value="OTHER">
+                                    <label class="form-check-label" for="gender_o_0">Other</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="nationality_0" class="form-label">Nationality *</label>
+                            <input type="text" class="form-control" id="nationality_0" 
+                                   name="nationality_0" required maxlength="50"
+                                   placeholder="e.g., Pakistani, American" value="Pakistani">
+                        </div>
                     </div>
-                </div>
-                
-                <!-- Passport Information -->
-                <div class="row">
-                    <div class="col-md-12 mb-3">
-                        <label for="passport_number_{{ i }}" class="form-label">Passport Number (Optional)</label>
-                        <input type="text" class="form-control" id="passport_number_{{ i }}" 
-                               name="passport_number_{{ i }}" maxlength="20" 
-                               placeholder="Enter passport number if available"
-                               value="{% if existing_passenger_data and existing_passenger_data[i] %}{{ existing_passenger_data[i].passport_number }}{% endif %}">
-                        <div class="passport-format">Optional for domestic flights</div>
+                    
+                    <!-- Passport Information -->
+                    <div class="row">
+                        <div class="col-md-12 mb-3">
+                            <label for="passport_number_0" class="form-label">Passport Number (Optional)</label>
+                            <input type="text" class="form-control" id="passport_number_0" 
+                                   name="passport_number_0" maxlength="20" 
+                                   placeholder="Enter passport number if available">
+                            <div class="passport-format">Optional for domestic flights</div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
-        {% endfor %}
 
+        <!-- Add Passenger Button -->
+        <div class="text-center mb-4">
+            <button type="button" class="btn btn-outline-primary" onclick="addPassenger()">
+                <i class="fas fa-plus"></i> Add Another Passenger
+            </button>
+            <div class="mt-2">
+                <small class="text-muted">Total Passengers: <span id="passengerCountDisplay">1</span> (Max: 6)</small>
+            </div>
+        </div>
+
+        <!-- Navigation Buttons -->
         <div class="row mt-4 mb-5">
             <div class="col-md-6">
                 <button type="button" class="btn btn-secondary w-100" onclick="history.back()">
@@ -283,6 +292,173 @@
 </div>
 
 <script>
+    let passengerCount = 1;
+
+    function addPassenger() {
+        if (passengerCount >= 6) {
+            alert('Maximum 6 passengers allowed per booking');
+            return;
+        }
+
+        passengerCount++;
+        const passengerSection = document.createElement('div');
+        passengerSection.className = 'passenger-form-container';
+        passengerSection.innerHTML = `
+            <div class="passenger-section">
+                <div class="passenger-header">
+                    <h5 class="mb-0">Passenger ${passengerCount}</h5>
+                    <small>Enter details exactly as they appear on travel documents</small>
+                    <button type="button" class="btn btn-sm btn-danger float-end" onclick="removePassenger(this)">Remove</button>
+                </div>
+                
+                <!-- Title and Personal Information -->
+                <div class="row">
+                    <div class="col-md-3 mb-3">
+                        <label for="title_${passengerCount-1}" class="form-label">Title *</label>
+                        <select class="form-select" id="title_${passengerCount-1}" name="title_${passengerCount-1}" required>
+                            <option value="">Select Title</option>
+                            <option value="MR">Mr.</option>
+                            <option value="MS">Ms.</option>
+                            <option value="MRS">Mrs.</option>
+                            <option value="DR">Dr.</option>
+                            <option value="MX">Mx.</option>
+                            <option value="CHD">Child</option>
+                            <option value="INF">Infant</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label for="first_name_${passengerCount-1}" class="form-label">First Name *</label>
+                        <input type="text" class="form-control" id="first_name_${passengerCount-1}" 
+                               name="first_name_${passengerCount-1}" required maxlength="50">
+                    </div>
+                    <div class="col-md-5 mb-3">
+                        <label for="last_name_${passengerCount-1}" class="form-label">Last Name *</label>
+                        <input type="text" class="form-control" id="last_name_${passengerCount-1}" 
+                               name="last_name_${passengerCount-1}" required maxlength="50">
+                    </div>
+                </div>
+
+                <!-- Date of Birth, Gender, and Nationality -->
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <label for="date_of_birth_${passengerCount-1}" class="form-label">Date of Birth *</label>
+                        <input type="date" class="form-control" id="date_of_birth_${passengerCount-1}" 
+                               name="date_of_birth_${passengerCount-1}" required>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">Gender *</label>
+                        <div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="gender_${passengerCount-1}" id="gender_m_${passengerCount-1}" value="MALE" required>
+                                <label class="form-check-label" for="gender_m_${passengerCount-1}">Male</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="gender_${passengerCount-1}" id="gender_f_${passengerCount-1}" value="FEMALE">
+                                <label class="form-check-label" for="gender_f_${passengerCount-1}">Female</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="gender_${passengerCount-1}" id="gender_o_${passengerCount-1}" value="OTHER">
+                                <label class="form-check-label" for="gender_o_${passengerCount-1}">Other</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label for="nationality_${passengerCount-1}" class="form-label">Nationality *</label>
+                        <input type="text" class="form-control" id="nationality_${passengerCount-1}" 
+                               name="nationality_${passengerCount-1}" required maxlength="50"
+                               placeholder="e.g., Pakistani, American" value="Pakistani">
+                    </div>
+                </div>
+                
+                <!-- Passport Information -->
+                <div class="row">
+                    <div class="col-md-12 mb-3">
+                        <label for="passport_number_${passengerCount-1}" class="form-label">Passport Number (Optional)</label>
+                        <input type="text" class="form-control" id="passport_number_${passengerCount-1}" 
+                               name="passport_number_${passengerCount-1}" maxlength="20" 
+                               placeholder="Enter passport number if available">
+                        <div class="passport-format">Optional for domestic flights</div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.getElementById('passengerFormsContainer').appendChild(passengerSection);
+        
+        // Set date limits for the new date field
+        const dobInput = document.getElementById(`date_of_birth_${passengerCount-1}`);
+        const maxDate = new Date();
+        const minDate = new Date();
+        minDate.setFullYear(minDate.getFullYear() - 120);
+        
+        dobInput.max = maxDate.toISOString().split('T')[0];
+        dobInput.min = minDate.toISOString().split('T')[0];
+        
+        updatePassengerCount();
+    }
+
+    function removePassenger(button) {
+        if (passengerCount <= 1) {
+            alert('At least one passenger is required');
+            return;
+        }
+        
+        const passengerSection = button.closest('.passenger-form-container');
+        passengerSection.remove();
+        passengerCount--;
+        updatePassengerCount();
+        
+        // Re-index the remaining passengers
+        const containers = document.querySelectorAll('.passenger-form-container');
+        containers.forEach((container, index) => {
+            const header = container.querySelector('.passenger-header h5');
+            header.textContent = `Passenger ${index + 1}`;
+            
+            // Update all input names and IDs
+            container.querySelectorAll('[id]').forEach(element => {
+                const oldId = element.id;
+                const newId = oldId.replace(/_(\d+)$/, `_${index}`);
+                element.id = newId;
+                
+                if (element.name) {
+                    element.name = element.name.replace(/_(\d+)$/, `_${index}`);
+                }
+                
+                // Update radio button names and labels
+                if (element.type === 'radio') {
+                    const label = document.querySelector(`label[for="${oldId}"]`);
+                    if (label) {
+                        label.htmlFor = newId;
+                    }
+                }
+            });
+        });
+    }
+
+    function updatePassengerCount() {
+        document.getElementById('passengerCount').value = passengerCount;
+        document.getElementById('passengerCountDisplay').textContent = passengerCount;
+    }
+
+    // Initialize the form
+    document.addEventListener('DOMContentLoaded', function() {
+        updatePassengerCount();
+        
+        // Set maximum date for date of birth (today)
+        const dobInputs = document.querySelectorAll('input[name^="date_of_birth_"]');
+        const maxDate = new Date();
+        const minDate = new Date();
+        minDate.setFullYear(minDate.getFullYear() - 120);
+        const maxDateStr = maxDate.toISOString().split('T')[0];
+        const minDateStr = minDate.toISOString().split('T')[0];
+        
+        dobInputs.forEach(input => {
+            input.max = maxDateStr;
+            input.min = minDateStr;
+        });
+    });
+
+    // Form validation
     document.getElementById('passengerForm').addEventListener('submit', function(e) {
         // Validate contact information
         const contactEmail = document.getElementById('contact_email').value.trim();
@@ -308,7 +484,6 @@
         });
         
         // Check radio button groups
-        const passengerCount = {{ passengers }};
         for (let i = 0; i < passengerCount; i++) {
             const genderSelected = document.querySelector(`input[name="gender_${i}"]:checked`);
             if (!genderSelected) {
@@ -324,7 +499,7 @@
         }
     });
 
-    // Form validation
+    // Form validation on blur
     document.addEventListener('DOMContentLoaded', function() {
         const form = document.getElementById('passengerForm');
         const inputs = form.querySelectorAll('input[required], select[required]');
@@ -337,24 +512,6 @@
                     this.classList.remove('is-invalid');
                 }
             });
-        });
-
-        // Set maximum date for date of birth (today)
-        const dobInputs = document.querySelectorAll('input[name^="date_of_birth_"]');
-        const maxDate = new Date();
-        const maxDateStr = maxDate.toISOString().split('T')[0];
-        
-        dobInputs.forEach(input => {
-            input.max = maxDateStr;
-        });
-
-        // Set minimum date for date of birth (120 years ago)
-        const minDate = new Date();
-        minDate.setFullYear(minDate.getFullYear() - 120);
-        const minDateStr = minDate.toISOString().split('T')[0];
-        
-        dobInputs.forEach(input => {
-            input.min = minDateStr;
         });
     });
 </script>

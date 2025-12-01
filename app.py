@@ -567,15 +567,14 @@ def search_flights():
     arrival_city = request.form.get('arrival_city')
     departure_date = request.form.get('departure_date')
     travel_class = request.form.get('travel_class')
-    passengers = request.form.get('passengers')
     trip_type = request.form.get('trip_type', 'one_way')
 
     print(f"Searching {trip_type} flights: {departure_city} to {arrival_city} on {departure_date}")
 
     # Store search criteria in session for later use
     session['search_travel_class'] = travel_class
-    session['search_passengers'] = passengers
     session['search_trip_type'] = trip_type
+    # Note: passengers is no longer stored here
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -647,7 +646,6 @@ def search_flights():
                 "arrival_city": arrival_city_name,
                 "date": departure_date,
                 "travel_class": travel_class_name,
-                "passengers": passengers,
                 "trip_type": trip_type
             }
         }
@@ -666,23 +664,21 @@ def search_flights():
 def select_flight(flight_id):
     # No login check - allow guests to select flights
     trip_type = request.args.get('trip_type') or session.get('search_trip_type', 'one_way')
-    passengers = request.args.get('passengers') or session.get('search_passengers', 1)
     travel_class = request.args.get('travel_class') or session.get('search_travel_class', 'ECO')
     
     # Store flight selection in session
     session['selected_outbound_flight'] = flight_id
     session['trip_type'] = trip_type
-    session['passengers'] = passengers
     session['travel_class'] = travel_class
     
     print(f"DEBUG - Setting session travel_class: {travel_class}")
-    print(f"DEBUG - Setting session passengers: {passengers}")
     print(f"DEBUG - Setting session trip_type: {trip_type}")
     
+    # ✅ FIXED: Redirect to passenger info instead of seat selection
     if session['trip_type'] == 'round_trip':
         return redirect('/return-flight-search')
     else:
-        return redirect('/seat-selection')
+        return redirect('/passenger-info')  # ✅ CHANGED TO PASSENGER INFO
 
 @app.route('/return-flight-search', methods=['GET', 'POST'])
 def return_flight_search():
@@ -971,26 +967,17 @@ def select_return_flight(flight_id):
 
 @app.route('/passenger-info', methods=['GET', 'POST'])
 def passenger_info():
-    if request.method == 'POST':
-        # Handle form submission from seat selection
-        selected_outbound_seats = request.form.getlist('selected_outbound_seats')
-        selected_return_seats = request.form.getlist('selected_return_seats')
-        
-        # Store in session for booking processing
-        session['selected_outbound_seats'] = selected_outbound_seats
-        session['selected_return_seats'] = selected_return_seats
-        
-        # Get flight details
+    if request.method == 'GET':
+        # GET request - show passenger information form
         flight_id = session.get('selected_outbound_flight')
-        return_flight_id = session.get('selected_return_flight')
-        passengers = int(session.get('passengers', 1))
-        travel_class = session.get('travel_class', 'ECO')
+        if not flight_id:
+            return redirect('/')
         
         conn = get_connection()
         cursor = conn.cursor()
         
         try:
-            # Get outbound flight details
+            # Get flight details
             cursor.execute("""
                 SELECT fi.Instance_ID, fi.Model_ID, 
                        c1.City_Name, c2.City_Name,
@@ -1007,6 +994,7 @@ def passenger_info():
             """, flight_id=flight_id)
             outbound_flight = cursor.fetchone()
             
+            return_flight_id = session.get('selected_return_flight')
             return_flight = None
             if return_flight_id:
                 cursor.execute("""
@@ -1032,13 +1020,11 @@ def passenger_info():
             return render_template('passenger_info.html',
                                 outbound_flight=outbound_flight,
                                 return_flight=return_flight,
-                                selected_outbound_seats=selected_outbound_seats,
-                                selected_return_seats=selected_return_seats,
-                                passengers=passengers,
-                                travel_class=travel_class,
+                                travel_class=session.get('travel_class', 'ECO'),
+                                trip_type=session.get('trip_type', 'one_way'),
                                 user_email=user_email,
                                 user_phone=user_phone,
-                                is_guest=not session.get('user_id'))  # Add flag for guest users
+                                is_guest=not session.get('user_id'))
             
         except Exception as e:
             print("Error in passenger info:", e)
@@ -1049,11 +1035,60 @@ def passenger_info():
             conn.close()
     
     else:
-        # GET request - redirect to seat selection if no seats selected
-        if 'selected_outbound_seats' not in session:
-            return redirect('/seat-selection')
-        
-        return redirect('/seat-selection')
+        # POST request - process passenger information and redirect to seat selection
+        try:
+            # Get passenger count and data from form
+            passenger_count = int(request.form.get('passenger_count', 1))
+            passenger_data = []
+            
+            # Get contact information
+            contact_email = request.form.get('contact_email')
+            contact_phone = request.form.get('contact_phone')
+            
+            print(f"DEBUG - Passenger Count: {passenger_count}")
+            print(f"DEBUG - Contact Email: {contact_email}")
+            print(f"DEBUG - Contact Phone: {contact_phone}")
+            
+            # Validate contact information
+            if not contact_email or not contact_phone:
+                return render_template('error.html', error="Contact email and phone are required")
+            
+            # Store contact info in session
+            session['contact_email'] = contact_email
+            session['contact_phone'] = contact_phone
+            
+            # Collect passenger data
+            for i in range(passenger_count):
+                passenger_data.append({
+                    'first_name': request.form.get(f'first_name_{i}'),
+                    'last_name': request.form.get(f'last_name_{i}'),
+                    'date_of_birth': request.form.get(f'date_of_birth_{i}'),
+                    'gender': request.form.get(f'gender_{i}'),
+                    'passport_number': request.form.get(f'passport_number_{i}', ''),
+                    'nationality': request.form.get(f'nationality_{i}', 'US'),
+                    'title': request.form.get(f'title_{i}', 'MR')
+                })
+            
+            # Validate all passenger data
+            for i, passenger in enumerate(passenger_data):
+                if not all([passenger['first_name'], passenger['last_name'], passenger['date_of_birth'], passenger['gender']]):
+                    return render_template('error.html', error=f"Please fill all required fields for passenger {i+1}")
+            
+            # Store passenger data and count in session
+            session['passenger_data'] = passenger_data
+            session['passengers'] = passenger_count
+            
+            print(f"DEBUG - Stored {passenger_count} passengers in session")
+            
+            # For round trip, check if return flight is selected
+            if session.get('trip_type') == 'round_trip' and not session.get('selected_return_flight'):
+                return redirect('/return-flight-search')
+            else:
+                return redirect('/seat-selection')
+                
+        except Exception as e:
+            print("Error processing passenger info:", e)
+            return render_template('error.html', error="Error processing passenger information")
 
 def validate_cnic(cnic):
     """Validate CNIC format (XXXXX-XXXXXXX-X)"""
@@ -1065,31 +1100,24 @@ def validate_cnic(cnic):
 @app.route('/process-booking', methods=['POST'])
 def process_booking():
     try:
-        # Get passenger data from form
-        passengers = int(session.get('passengers', 1))
-        passenger_data = []
+        # Get passenger data from session (not from form)
+        passenger_data = session.get('passenger_data', [])
+        passengers = len(passenger_data)
         
-        # Get contact information from separate fields
-        contact_email = request.form.get('contact_email')
-        contact_phone = request.form.get('contact_phone')
+        if passengers == 0:
+            return render_template('error.html', error="No passenger data found. Please start over.")
+        
+        # Get contact information from session
+        contact_email = session.get('contact_email')
+        contact_phone = session.get('contact_phone')
         
         print(f"DEBUG - Contact Email: {contact_email}")
         print(f"DEBUG - Contact Phone: {contact_phone}")
+        print(f"DEBUG - Processing {passengers} passengers from session")
         
         # Validate contact information
         if not contact_email or not contact_phone:
             return render_template('error.html', error="Contact email and phone are required")
-        
-        for i in range(passengers):
-            passenger_data.append({
-                'first_name': request.form.get(f'first_name_{i}'),
-                'last_name': request.form.get(f'last_name_{i}'),
-                'date_of_birth': request.form.get(f'date_of_birth_{i}'),
-                'gender': request.form.get(f'gender_{i}'),
-                'passport_number': request.form.get(f'passport_number_{i}', ''),
-                'nationality': request.form.get(f'nationality_{i}', 'US'),
-                'title': request.form.get(f'title_{i}', 'MR')
-            })
         
         # Get seat selections and other data
         selected_outbound_seats = request.form.getlist('selected_outbound_seats')
@@ -1105,6 +1133,15 @@ def process_booking():
         print(f"DEBUG - Lead User ID: {lead_user_id} (None = guest booking)")
         print(f"DEBUG - Outbound flight: {outbound_flight_id}")
         print(f"DEBUG - Return flight: {return_flight_id}")
+        print(f"DEBUG - Selected outbound seats: {selected_outbound_seats}")
+        print(f"DEBUG - Selected return seats: {selected_return_seats}")
+        
+        # Validate seat selection matches passenger count
+        if len(selected_outbound_seats) != passengers:
+            return render_template('error.html', error=f"Please select exactly {passengers} outbound seat(s) for {passengers} passenger(s)")
+        
+        if trip_type == 'round_trip' and len(selected_return_seats) != passengers:
+            return render_template('error.html', error=f"Please select exactly {passengers} return seat(s) for {passengers} passenger(s)")
         
         conn = get_connection()
         cursor = conn.cursor()
@@ -1257,7 +1294,7 @@ def process_booking():
                 passenger_ids.append(passenger_result[0])
                 print(f"DEBUG - Passenger {i} ID: {passenger_result[0]}")
             
-            # Create reservations for outbound flight (same as before)
+            # Create reservations for outbound flight
             for i, seat_simple in enumerate(selected_outbound_seats):
                 if i < len(passenger_ids):
                     # Parse seat information
@@ -1312,7 +1349,7 @@ def process_booking():
                     seat_letter=seat_letter,
                     price=seat_price)
             
-            # Create reservations for return flight if applicable (same as before)
+            # Create reservations for return flight if applicable
             if return_flight_id:
                 cursor.execute("""
                     SELECT fi.Model_ID, fr.Route_ID 
@@ -1393,13 +1430,18 @@ def process_booking():
             print(f"DEBUG - All database operations completed successfully!")
             
             # Clear session data
+            session.pop('passenger_data', None)
+            session.pop('contact_email', None)
+            session.pop('contact_phone', None)
             session.pop('selected_outbound_seats', None)
             session.pop('selected_return_seats', None)
             session.pop('selected_outbound_flight', None)
             session.pop('selected_return_flight', None)
             session.pop('search_travel_class', None)
-            session.pop('search_passengers', None)
             session.pop('search_trip_type', None)
+            session.pop('travel_class', None)
+            session.pop('passengers', None)
+            session.pop('trip_type', None)
             
             return redirect(url_for('booking_confirmation', 
                         booking_id=booking_id, 

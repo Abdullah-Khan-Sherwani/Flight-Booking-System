@@ -198,7 +198,7 @@
 
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
     <div class="container">
-        <a class="navbar-brand" href="{{ url_for('auth.home') }}">IAT Airlines</a>
+        <a class="navbar-brand" href="{{ url_for('home') }}">IAT Airlines</a>
     </div>
 </nav>
 
@@ -228,6 +228,17 @@
             {{ 'Round Trip' if trip_type == 'round_trip' else 'One Way' }}
         </span>
     </h2>
+
+    <!-- Passenger list display -->
+    <div class="passenger-list">
+        <h5>Passengers for this booking:</h5>
+        {% for passenger in passenger_data %}
+        <span class="passenger-badge">{{ passenger.title }}. {{ passenger.first_name }} {{ passenger.last_name }}</span>
+        {% endfor %}
+        <div class="seat-assignment-display" id="seat-assignments">
+            <small>Select seats below. Seats will be assigned in the order passengers are listed.</small>
+        </div>
+    </div>
 
     <!-- Debug Information -->
     <div class="debug-info">
