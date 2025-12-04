@@ -6,6 +6,7 @@ to `cx_Oracle` if needed. `get_connection()` will return an open connection
 or raise an exception with a clear message so calling code can see the real
 failure instead of getting a None and failing with AttributeError.
 """
+# NOTE: Service name must be XEPDB1 for gvenzl/oracle-xe Docker images.
 import os
 from config import DB_USERNAME, DB_PASSWORD, DB_DSN
 
@@ -27,7 +28,7 @@ def get_connection():
     """
     user = os.environ.get('DB_USERNAME', DB_USERNAME)
     pwd = os.environ.get('DB_PASSWORD', DB_PASSWORD)
-    dsn = os.environ.get('DB_DSN', DB_DSN)
+    dsn = os.environ.get('DB_DSN', DB_DSN or "127.0.0.1:1521/XEPDB1")
 
     if _db_driver is None:
         raise RuntimeError(

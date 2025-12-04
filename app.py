@@ -906,6 +906,10 @@ def seat_selection():
         if travel_class not in ['ECO', 'BUS', 'FIR']:
             travel_class = 'ECO'
         
+        # Get passenger_data from session for infant detection
+        passenger_data = session.get('passenger_data', [])
+        print(f"DEBUG - Passenger data for seat selection: {passenger_data}")
+        
         return render_template('seat_selection.html',
                             outbound_flight=outbound_flight,
                             return_flight=return_flight,
@@ -914,6 +918,7 @@ def seat_selection():
                             booked_outbound_seats=booked_outbound_seats,
                             booked_return_seats=booked_return_seats,
                             passengers=passengers,
+                            passenger_data=passenger_data,
                             travel_class=travel_class,
                             trip_type=trip_type,
                             is_reschedule=reschedule_reservation_id is not None)
@@ -1136,12 +1141,31 @@ def process_booking():
         print(f"DEBUG - Selected outbound seats: {selected_outbound_seats}")
         print(f"DEBUG - Selected return seats: {selected_return_seats}")
         
-        # Validate seat selection matches passenger count
-        if len(selected_outbound_seats) != passengers:
-            return render_template('error.html', error=f"Please select exactly {passengers} outbound seat(s) for {passengers} passenger(s)")
+        # Count infants and adults
+        infant_count = sum(1 for p in passenger_data if p.get('title') == 'INF')
+        adult_count = passengers - infant_count
         
-        if trip_type == 'round_trip' and len(selected_return_seats) != passengers:
-            return render_template('error.html', error=f"Please select exactly {passengers} return seat(s) for {passengers} passenger(s)")
+        # Calculate lap infants (free, no seat) vs seated infants (need seat, 50% price)
+        # Rule: First infant per adult gets lap (free), extra infants need seats
+        lap_infant_count = min(infant_count, adult_count)  # Max 1 lap infant per adult
+        seated_infant_count = infant_count - lap_infant_count  # Extra infants need seats
+        
+        # Passengers needing seats = adults + seated infants
+        passengers_needing_seats = adult_count + seated_infant_count
+        
+        print(f"DEBUG - Infant breakdown: {lap_infant_count} lap (free), {seated_infant_count} seated (50% price)")
+        print(f"DEBUG - Passengers needing seats: {passengers_needing_seats}")
+        
+        # Count actual seats selected (excluding "INFANT" placeholder)
+        actual_outbound_seats = [s for s in selected_outbound_seats if s != 'INFANT']
+        actual_return_seats = [s for s in selected_return_seats if s != 'INFANT']
+        
+        # Validate seat selection matches passengers needing seats
+        if len(actual_outbound_seats) != passengers_needing_seats:
+            return render_template('error.html', error=f"Please select exactly {passengers_needing_seats} outbound seat(s) ({adult_count} adults + {seated_infant_count} seated infants)")
+        
+        if trip_type == 'round_trip' and len(actual_return_seats) != passengers_needing_seats:
+            return render_template('error.html', error=f"Please select exactly {passengers_needing_seats} return seat(s) ({adult_count} adults + {seated_infant_count} seated infants)")
         
         conn = get_connection()
         cursor = conn.cursor()
@@ -1151,7 +1175,23 @@ def process_booking():
             timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
             total_amount = 0
             
-            # Function to generate sequential IDs (same as before)
+            # Function to generate Reservation ID using Oracle SEQUENCE (thread-safe, no race conditions)
+            def generate_reservation_id(cursor):
+                """Generate a unique Reservation ID using Oracle SEQUENCE.
+                Format: IAT-YYYYMMDD-NNNNNN (e.g., IAT-20251204-100001)
+                - IAT = Airline code
+                - YYYYMMDD = Current date  
+                - NNNNNN = 6-digit sequence number (100001-999999, cycles)
+                """
+                cursor.execute("""
+                    SELECT 'IAT-' || TO_CHAR(SYSDATE, 'YYYYMMDD') || '-' || LPAD(Reservation_Seq.NEXTVAL, 6, '0') 
+                    FROM DUAL
+                """)
+                res_id = cursor.fetchone()[0]
+                print(f"DEBUG - Generated Reservation ID: {res_id}")
+                return res_id
+            
+            # Legacy function for Payment ID (still uses timestamp-based)
             def generate_sequential_id(prefix, table_name, id_column, cursor):
                 base_id = f"{prefix}{timestamp}"
                 test_id = base_id
@@ -1188,11 +1228,14 @@ def process_booking():
             pricing_result = cursor.fetchone()
             if pricing_result:
                 base_price = pricing_result[0]
-                total_amount = base_price * len(selected_outbound_seats)
+                # Calculate total: adults pay full, lap infants FREE, seated infants 50%
+                total_amount = (base_price * adult_count) + (base_price * 0.5 * seated_infant_count)
             else:
                 default_costs = {'ECO': 100, 'BUS': 300, 'FIR': 500}
                 base_price = default_costs.get(travel_class, 100)
-                total_amount = base_price * len(selected_outbound_seats)
+                total_amount = (base_price * adult_count) + (base_price * 0.5 * seated_infant_count)
+            
+            print(f"DEBUG - Pricing: {adult_count} adults @ {base_price}, {lap_infant_count} lap infants @ FREE, {seated_infant_count} seated infants @ {base_price * 0.5}")
             
             # Add return flight cost if applicable
             if return_flight_id:
@@ -1215,11 +1258,12 @@ def process_booking():
                 return_pricing_result = cursor.fetchone()
                 if return_pricing_result:
                     return_base_price = return_pricing_result[0]
-                    total_amount += return_base_price * len(selected_return_seats)
+                    # Return: adults full, lap infants FREE, seated infants 50%
+                    total_amount += (return_base_price * adult_count) + (return_base_price * 0.5 * seated_infant_count)
                 else:
                     default_costs = {'ECO': 100, 'BUS': 300, 'FIR': 500}
                     return_base_price = default_costs.get(travel_class, 100)
-                    total_amount += return_base_price * len(selected_return_seats)
+                    total_amount += (return_base_price * adult_count) + (return_base_price * 0.5 * seated_infant_count)
             
             print(f"DEBUG - Total amount: {total_amount}")
             
@@ -1255,25 +1299,67 @@ def process_booking():
             # Insert passengers - for guest users, Linked_User_ID will be NULL
             passenger_ids = []
             for i, passenger in enumerate(passenger_data):
-                print(f"DEBUG - Inserting passenger {i}: {passenger['first_name']} {passenger['last_name']}")
+                print(f"DEBUG - Processing passenger {i}: {passenger['first_name']} {passenger['last_name']} (Title: {passenger['title']})")
                 
                 if lead_user_id and i == 0:
-                    # For logged-in users, link the first passenger to their account
+                    # For logged-in users, check if they already have a linked passenger profile
                     cursor.execute("""
-                        INSERT INTO Passenger 
-                        (Linked_User_ID, First_Name, Last_Name, Date_Of_Birth, Gender, Nationality, Passport_Num, Title)
-                        VALUES (:user_id, :first_name, :last_name, TO_DATE(:dob, 'YYYY-MM-DD'), :gender, :nationality, :passport, :title)
-                    """, 
-                    user_id=lead_user_id,
-                    first_name=passenger['first_name'],
-                    last_name=passenger['last_name'],
-                    dob=passenger['date_of_birth'],
-                    gender=passenger['gender'],
-                    nationality=passenger['nationality'],
-                    passport=passenger['passport_number'],
-                    title=passenger['title'])
+                        SELECT Passenger_ID FROM Passenger WHERE Linked_User_ID = :user_id
+                    """, user_id=lead_user_id)
+                    existing_passenger = cursor.fetchone()
+                    
+                    if existing_passenger:
+                        # Reuse existing passenger profile
+                        passenger_id = existing_passenger[0]
+                        print(f"DEBUG - Reusing existing passenger profile (ID: {passenger_id}) for user {lead_user_id}")
+                        
+                        # Optionally update passenger details if changed
+                        cursor.execute("""
+                            UPDATE Passenger SET
+                                First_Name = :first_name,
+                                Last_Name = :last_name,
+                                Date_Of_Birth = TO_DATE(:dob, 'YYYY-MM-DD'),
+                                Gender = :gender,
+                                Nationality = :nationality,
+                                Passport_Num = :passport,
+                                Title = :title
+                            WHERE Passenger_ID = :pid
+                        """,
+                        first_name=passenger['first_name'],
+                        last_name=passenger['last_name'],
+                        dob=passenger['date_of_birth'],
+                        gender=passenger['gender'],
+                        nationality=passenger['nationality'],
+                        passport=passenger['passport_number'],
+                        title=passenger['title'],
+                        pid=passenger_id)
+                        
+                        passenger_ids.append(passenger_id)
+                    else:
+                        # No existing profile - create new one linked to user
+                        print(f"DEBUG - Creating NEW passenger profile linked to user {lead_user_id}")
+                        cursor.execute("""
+                            INSERT INTO Passenger 
+                            (Linked_User_ID, First_Name, Last_Name, Date_Of_Birth, Gender, Nationality, Passport_Num, Title)
+                            VALUES (:user_id, :first_name, :last_name, TO_DATE(:dob, 'YYYY-MM-DD'), :gender, :nationality, :passport, :title)
+                        """, 
+                        user_id=lead_user_id,
+                        first_name=passenger['first_name'],
+                        last_name=passenger['last_name'],
+                        dob=passenger['date_of_birth'],
+                        gender=passenger['gender'],
+                        nationality=passenger['nationality'],
+                        passport=passenger['passport_number'],
+                        title=passenger['title'])
+                        
+                        # Get the generated passenger ID
+                        cursor.execute("SELECT Passenger_ID FROM Passenger WHERE Linked_User_ID = :user_id", user_id=lead_user_id)
+                        passenger_result = cursor.fetchone()
+                        passenger_ids.append(passenger_result[0])
+                        print(f"DEBUG - Created passenger ID: {passenger_result[0]}")
                 else:
                     # For guest users or additional passengers, Linked_User_ID is NULL
+                    print(f"DEBUG - Creating guest/additional passenger: {passenger['first_name']} {passenger['last_name']}")
                     cursor.execute("""
                         INSERT INTO Passenger 
                         (First_Name, Last_Name, Date_Of_Birth, Gender, Nationality, Passport_Num, Title)
@@ -1286,17 +1372,104 @@ def process_booking():
                     nationality=passenger['nationality'],
                     passport=passenger['passport_number'],
                     title=passenger['title'])
-                
-                # Get the generated passenger ID
-                cursor.execute("SELECT Passenger_ID FROM Passenger WHERE First_Name = :first_name AND Last_Name = :last_name AND Date_Of_Birth = TO_DATE(:dob, 'YYYY-MM-DD')", 
-                             first_name=passenger['first_name'], last_name=passenger['last_name'], dob=passenger['date_of_birth'])
-                passenger_result = cursor.fetchone()
-                passenger_ids.append(passenger_result[0])
-                print(f"DEBUG - Passenger {i} ID: {passenger_result[0]}")
+                    
+                    # Get the generated passenger ID using sequence's last value
+                    cursor.execute("""
+                        SELECT Passenger_ID FROM Passenger 
+                        WHERE First_Name = :first_name 
+                        AND Last_Name = :last_name 
+                        AND Date_Of_Birth = TO_DATE(:dob, 'YYYY-MM-DD')
+                        ORDER BY Passenger_ID DESC
+                        FETCH FIRST 1 ROW ONLY
+                    """, 
+                    first_name=passenger['first_name'], 
+                    last_name=passenger['last_name'], 
+                    dob=passenger['date_of_birth'])
+                    passenger_result = cursor.fetchone()
+                    passenger_ids.append(passenger_result[0])
+                    print(f"DEBUG - Created guest passenger ID: {passenger_result[0]}")
             
             # Create reservations for outbound flight
-            for i, seat_simple in enumerate(selected_outbound_seats):
-                if i < len(passenger_ids):
+            # Track seat index for passengers needing seats (adults + seated infants)
+            seat_index = 0
+            actual_outbound_seats = [s for s in selected_outbound_seats if s != 'INFANT']
+            
+            # Track lap infant count to determine which infants get lap vs seat
+            lap_infant_counter = 0
+            
+            for i, passenger in enumerate(passenger_data):
+                passenger_id = passenger_ids[i]
+                is_infant = passenger.get('title') == 'INF'
+                
+                res_id = generate_reservation_id(cursor)
+                
+                if is_infant:
+                    # Determine if this infant gets lap (free) or seat (50% price)
+                    if lap_infant_counter < adult_count:
+                        # LAP_INFANT: free, no seat - SQL trigger sets Price_Charged = 0
+                        passenger_type = 'LAP_INFANT'
+                        lap_infant_counter += 1
+                        
+                        print(f"DEBUG - Creating outbound LAP_INFANT reservation: {res_id} (trigger sets price to FREE)")
+                        
+                        cursor.execute("""
+                            INSERT INTO Reservation 
+                            (Reservation_ID, Booking_ID, Passenger_ID, Instance_ID, Row_Number, Seat_Letter, Price_Charged, Passenger_Type)
+                            VALUES (:res_id, :booking_id, :passenger_id, :instance_id, NULL, NULL, 0, :pax_type)
+                        """, 
+                        res_id=res_id,
+                        booking_id=booking_id,
+                        passenger_id=passenger_id,
+                        instance_id=outbound_flight_id,
+                        pax_type=passenger_type)
+                    else:
+                        # SEATED_INFANT: SQL trigger auto-calculates 50% of base price
+                        passenger_type = 'SEATED_INFANT'
+                        
+                        if seat_index >= len(actual_outbound_seats):
+                            print(f"ERROR - Not enough seats for seated infant {i}")
+                            continue
+                        
+                        seat_simple = actual_outbound_seats[seat_index]
+                        seat_index += 1
+                        
+                        # Parse seat information
+                        row_match = re.search(r'\d+', seat_simple)
+                        letter_match = re.search(r'[A-Z]', seat_simple)
+                        
+                        if not row_match or not letter_match:
+                            print(f"ERROR - Invalid seat format: {seat_simple}")
+                            continue
+                        
+                        row_num = int(row_match.group())
+                        seat_letter = letter_match.group()
+                        
+                        print(f"DEBUG - Creating outbound SEATED_INFANT reservation: {res_id} for seat {row_num}{seat_letter} (trigger calculates 50% price)")
+                        
+                        # Pass 0 as placeholder - SQL trigger TRG_Infant_Booking_Rules auto-calculates 50% of base price
+                        cursor.execute("""
+                            INSERT INTO Reservation 
+                            (Reservation_ID, Booking_ID, Passenger_ID, Instance_ID, Row_Number, Seat_Letter, Price_Charged, Passenger_Type)
+                            VALUES (:res_id, :booking_id, :passenger_id, :instance_id, :row_num, :seat_letter, 0, :pax_type)
+                        """, 
+                        res_id=res_id,
+                        booking_id=booking_id,
+                        passenger_id=passenger_id,
+                        instance_id=outbound_flight_id,
+                        row_num=row_num,
+                        seat_letter=seat_letter,
+                        pax_type=passenger_type)
+                else:
+                    # ADULT: Regular passenger, full price, needs seat
+                    passenger_type = 'ADULT'
+                    
+                    if seat_index >= len(actual_outbound_seats):
+                        print(f"ERROR - Not enough seats for passenger {i}")
+                        continue
+                    
+                    seat_simple = actual_outbound_seats[seat_index]
+                    seat_index += 1
+                    
                     # Parse seat information
                     row_match = re.search(r'\d+', seat_simple)
                     letter_match = re.search(r'[A-Z]', seat_simple)
@@ -1331,23 +1504,21 @@ def process_booking():
                     seat_price_result = cursor.fetchone()
                     seat_price = seat_price_result[0] if seat_price_result else base_price
                     
-                    # Create reservation
-                    res_id = generate_sequential_id("RES", "Reservation", "Reservation_ID", cursor)
-                    
-                    print(f"DEBUG - Creating outbound reservation {i}: {res_id} for seat {row_num}{seat_letter}")
+                    print(f"DEBUG - Creating outbound ADULT reservation {i}: {res_id} for seat {row_num}{seat_letter}")
                     
                     cursor.execute("""
                         INSERT INTO Reservation 
-                        (Reservation_ID, Booking_ID, Passenger_ID, Instance_ID, Row_Number, Seat_Letter, Price_Charged)
-                        VALUES (:res_id, :booking_id, :passenger_id, :instance_id, :row_num, :seat_letter, :price)
+                        (Reservation_ID, Booking_ID, Passenger_ID, Instance_ID, Row_Number, Seat_Letter, Price_Charged, Passenger_Type)
+                        VALUES (:res_id, :booking_id, :passenger_id, :instance_id, :row_num, :seat_letter, :price, :pax_type)
                     """, 
                     res_id=res_id,
                     booking_id=booking_id,
-                    passenger_id=passenger_ids[i],
+                    passenger_id=passenger_id,
                     instance_id=outbound_flight_id,
                     row_num=row_num,
                     seat_letter=seat_letter,
-                    price=seat_price)
+                    price=seat_price,
+                    pax_type=passenger_type)
             
             # Create reservations for return flight if applicable
             if return_flight_id:
@@ -1361,8 +1532,96 @@ def process_booking():
                 return_model_id = return_flight_info[0]
                 return_route_id = return_flight_info[1]
                 
-                for i, seat_simple in enumerate(selected_return_seats):
-                    if i < len(passenger_ids):
+                # Get return base price
+                cursor.execute("""
+                    SELECT Base_Price FROM Route_Pricing 
+                    WHERE Route_ID = :route_id 
+                    AND Class_ID = :class_id
+                    AND SYSDATE BETWEEN Valid_From AND Valid_To
+                """, route_id=return_route_id, class_id=travel_class)
+                return_pricing = cursor.fetchone()
+                return_base_price = return_pricing[0] if return_pricing else base_price
+                
+                # Track seat index for passengers needing seats (adults + seated infants)
+                return_seat_index = 0
+                actual_return_seats = [s for s in selected_return_seats if s != 'INFANT']
+                
+                # Track lap infant count for return flight
+                return_lap_infant_counter = 0
+                
+                for i, passenger in enumerate(passenger_data):
+                    passenger_id = passenger_ids[i]
+                    is_infant = passenger.get('title') == 'INF'
+                    
+                    res_id = generate_reservation_id(cursor)
+                    
+                    if is_infant:
+                        # Determine if this infant gets lap (free) or seat (50% price)
+                        if return_lap_infant_counter < adult_count:
+                            # LAP_INFANT: free, no seat - SQL trigger sets Price_Charged = 0
+                            passenger_type = 'LAP_INFANT'
+                            return_lap_infant_counter += 1
+                            
+                            print(f"DEBUG - Creating return LAP_INFANT reservation: {res_id} (trigger sets price to FREE)")
+                            
+                            cursor.execute("""
+                                INSERT INTO Reservation 
+                                (Reservation_ID, Booking_ID, Passenger_ID, Instance_ID, Row_Number, Seat_Letter, Price_Charged, Passenger_Type)
+                                VALUES (:res_id, :booking_id, :passenger_id, :instance_id, NULL, NULL, 0, :pax_type)
+                            """, 
+                            res_id=res_id,
+                            booking_id=booking_id,
+                            passenger_id=passenger_id,
+                            instance_id=return_flight_id,
+                            pax_type=passenger_type)
+                        else:
+                            # SEATED_INFANT: SQL trigger auto-calculates 50% of base price
+                            passenger_type = 'SEATED_INFANT'
+                            
+                            if return_seat_index >= len(actual_return_seats):
+                                print(f"ERROR - Not enough return seats for seated infant {i}")
+                                continue
+                            
+                            seat_simple = actual_return_seats[return_seat_index]
+                            return_seat_index += 1
+                            
+                            # Parse seat information
+                            row_match = re.search(r'\d+', seat_simple)
+                            letter_match = re.search(r'[A-Z]', seat_simple)
+                            
+                            if not row_match or not letter_match:
+                                print(f"ERROR - Invalid return seat format: {seat_simple}")
+                                continue
+                            
+                            row_num = int(row_match.group())
+                            seat_letter = letter_match.group()
+                            
+                            print(f"DEBUG - Creating return SEATED_INFANT reservation: {res_id} for seat {row_num}{seat_letter} (trigger calculates 50% price)")
+                            
+                            # Pass 0 as placeholder - SQL trigger TRG_Infant_Booking_Rules auto-calculates 50% of base price
+                            cursor.execute("""
+                                INSERT INTO Reservation 
+                                (Reservation_ID, Booking_ID, Passenger_ID, Instance_ID, Row_Number, Seat_Letter, Price_Charged, Passenger_Type)
+                                VALUES (:res_id, :booking_id, :passenger_id, :instance_id, :row_num, :seat_letter, 0, :pax_type)
+                            """, 
+                            res_id=res_id,
+                            booking_id=booking_id,
+                            passenger_id=passenger_id,
+                            instance_id=return_flight_id,
+                            row_num=row_num,
+                            seat_letter=seat_letter,
+                            pax_type=passenger_type)
+                    else:
+                        # ADULT: Regular passenger, full price, needs seat
+                        passenger_type = 'ADULT'
+                        
+                        if return_seat_index >= len(actual_return_seats):
+                            print(f"ERROR - Not enough return seats for passenger {i}")
+                            continue
+                        
+                        seat_simple = actual_return_seats[return_seat_index]
+                        return_seat_index += 1
+                        
                         # Parse seat information
                         row_match = re.search(r'\d+', seat_simple)
                         letter_match = re.search(r'[A-Z]', seat_simple)
@@ -1395,27 +1654,32 @@ def process_booking():
                         """, route_id=return_route_id, class_id=travel_class)
                         
                         return_seat_price_result = cursor.fetchone()
-                        return_seat_price = return_seat_price_result[0] if return_seat_price_result else base_price
+                        return_seat_price = return_seat_price_result[0] if return_seat_price_result else return_base_price
                         
-                        # Create return reservation
-                        res_id = generate_sequential_id("RES", "Reservation", "Reservation_ID", cursor)
-                        
-                        print(f"DEBUG - Creating return reservation {i}: {res_id} for seat {row_num}{seat_letter}")
+                        print(f"DEBUG - Creating return ADULT reservation {i}: {res_id} for seat {row_num}{seat_letter}")
                         
                         cursor.execute("""
                             INSERT INTO Reservation 
-                            (Reservation_ID, Booking_ID, Passenger_ID, Instance_ID, Row_Number, Seat_Letter, Price_Charged)
-                            VALUES (:res_id, :booking_id, :passenger_id, :instance_id, :row_num, :seat_letter, :price)
+                            (Reservation_ID, Booking_ID, Passenger_ID, Instance_ID, Row_Number, Seat_Letter, Price_Charged, Passenger_Type)
+                            VALUES (:res_id, :booking_id, :passenger_id, :instance_id, :row_num, :seat_letter, :price, :pax_type)
                         """, 
                         res_id=res_id,
                         booking_id=booking_id,
-                        passenger_id=passenger_ids[i],
+                        passenger_id=passenger_id,
                         instance_id=return_flight_id,
                         row_num=row_num,
                         seat_letter=seat_letter,
-                        price=return_seat_price)
+                        price=return_seat_price,
+                        pax_type=passenger_type)
             
-            # Create initial payment record
+            # Get actual total from database (prices set by SQL trigger)
+            cursor.execute("""
+                SELECT NVL(SUM(Price_Charged), 0) FROM Reservation WHERE Booking_ID = :booking_id
+            """, booking_id=booking_id)
+            actual_total = cursor.fetchone()[0]
+            print(f"DEBUG - Actual total from database (trigger-calculated): {actual_total}")
+            
+            # Create initial payment record with actual total from trigger
             payment_id = generate_sequential_id("PAY", "Payment", "Payment_ID", cursor)
             cursor.execute("""
                 INSERT INTO Payment 
@@ -1424,7 +1688,7 @@ def process_booking():
             """,
             payment_id=payment_id,
             booking_id=booking_id,
-            amount=total_amount)
+            amount=actual_total)
             
             conn.commit()
             print(f"DEBUG - All database operations completed successfully!")
@@ -1446,7 +1710,7 @@ def process_booking():
             return redirect(url_for('booking_confirmation', 
                         booking_id=booking_id, 
                         passenger_count=passengers,
-                        total_amount=total_amount,
+                        total_amount=actual_total,
                         auto_download='true'))
             
         except Exception as e:
@@ -2446,4 +2710,5 @@ if __name__ == '__main__':
     # app.run(debug=True)
 
     # Run the app to be accessible over the network
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # Using port 5001 because 5000 is used by AirPlay on macOS
+    app.run(debug=True, host='0.0.0.0', port=5001)

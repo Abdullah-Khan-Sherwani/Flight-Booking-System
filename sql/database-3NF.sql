@@ -189,6 +189,11 @@ CREATE TABLE Booking (
 -- It is a reusable profile linked to an App_User (if they have an account).
 CREATE SEQUENCE Passenger_Seq START WITH 1 INCREMENT BY 1;
 
+-- RESERVATION ID SEQUENCE
+-- Generates unique ticket numbers in airline format: IAT-YYYYMMDD-NNNNNN
+-- IAT = IAT Airlines code, YYYYMMDD = date, NNNNNN = 6-digit sequential number
+CREATE SEQUENCE Reservation_Seq START WITH 100001 INCREMENT BY 1 MAXVALUE 999999 CYCLE NOCACHE;
+
 CREATE TABLE Passenger (
     Passenger_ID   NUMBER DEFAULT Passenger_Seq.NEXTVAL PRIMARY KEY,
     
@@ -231,6 +236,13 @@ CREATE TABLE Reservation (
     Row_Number     NUMBER,
     Seat_Letter    CHAR(1),
     Price_Charged  NUMBER(10, 2) NOT NULL CHECK (Price_Charged >= 0),
+    
+    -- Passenger Type for THIS reservation (determines pricing and seat rules)
+    -- ADULT: Regular passenger, requires seat, full price
+    -- LAP_INFANT: Infant on adult's lap, no seat, FREE
+    -- SEATED_INFANT: Extra infant needing own seat, 50% price
+    Passenger_Type VARCHAR2(20) DEFAULT 'ADULT'
+                   CHECK (Passenger_Type IN ('ADULT', 'LAP_INFANT', 'SEATED_INFANT')),
     
     Ticket_Status  VARCHAR2(20) DEFAULT 'ISSUED'
                    CHECK (Ticket_Status IN ('ISSUED', 'CHECKED_IN', 'BOARDED', 'NO_SHOW', 'CANCELLED')),
@@ -295,32 +307,7 @@ END;
 /
 
 -- B. Ghost Seat Prevention (Verify seat exists on the specific Aircraft Model)
-CREATE OR REPLACE TRIGGER TRG_Verify_Seat_Exists
-BEFORE INSERT OR UPDATE ON Reservation
-FOR EACH ROW
-DECLARE
-    v_Model_ID VARCHAR2(20);
-    v_Count    NUMBER;
-BEGIN
-    -- 1. Find the aircraft model used for this flight instance
-    SELECT Model_ID INTO v_Model_ID
-    FROM Flight_Instance
-    WHERE Instance_ID = :NEW.Instance_ID;
-
-    -- 2. Check if that seat exists in the map for that model
-    SELECT COUNT(*) INTO v_Count
-    FROM Aircraft_Seat_Map
-    WHERE Model_ID = v_Model_ID
-      AND Row_Number = :NEW.Row_Number
-      AND Seat_Letter = :NEW.Seat_Letter;
-
-    IF v_Count = 0 THEN
-        RAISE_APPLICATION_ERROR(-20002, 'Invalid Seat: This seat does not exist on the scheduled aircraft.');
-    END IF;
-END;
-/
-
--- This Trigger solves your fear about "No link to seats." It acts as a Virtual Foreign Key. Before any reservation is saved, it checks: "Does this seat actually exist on this specific airplane model?"
+-- Supports NULL seats for infants (on lap)
 CREATE OR REPLACE TRIGGER TRG_Validate_Seat_Exists
 BEFORE INSERT OR UPDATE ON Reservation
 FOR EACH ROW
@@ -439,7 +426,7 @@ BEGIN
         Reservation_ID, Booking_ID, Passenger_ID, Instance_ID, 
         Row_Number, Seat_Letter, Price_Charged, Ticket_Status
     ) VALUES (
-        'RES' || round(DBMS_RANDOM.VALUE(10000,99999)), -- Simple ID generation
+        'IAT-' || TO_CHAR(SYSDATE, 'YYYYMMDD') || '-' || LPAD(Reservation_Seq.NEXTVAL, 6, '0'),
         p_Booking_ID, p_Passenger_ID, p_Instance_ID, 
         v_Final_Row, v_Final_Seat, 150.00, 'ISSUED'
     );
@@ -447,3 +434,188 @@ BEGIN
     COMMIT;
 END;
 /
+
+--------------------------------------------------------------------------------
+-- C. INFANT BOOKING RULES (Business Logic Triggers)
+--------------------------------------------------------------------------------
+
+-- Trigger: Validate and Enforce Infant Booking Rules
+-- Rules:
+-- 1. LAP_INFANT must have NULL seat and Price_Charged = 0 (FREE)
+-- 2. SEATED_INFANT must have a seat and Price_Charged = 50% of base
+-- 3. ADULT must have a seat (or auto-assign)
+-- 4. Only passengers with Title='INF' can be LAP_INFANT or SEATED_INFANT
+
+CREATE OR REPLACE TRIGGER TRG_Infant_Booking_Rules
+BEFORE INSERT OR UPDATE ON Reservation
+FOR EACH ROW
+DECLARE
+    v_Title VARCHAR2(10);
+    v_Route_ID VARCHAR2(10);
+    v_Class_ID VARCHAR2(10);
+    v_Base_Price NUMBER(10,2);
+BEGIN
+    -- Get passenger title
+    SELECT Title INTO v_Title 
+    FROM Passenger 
+    WHERE Passenger_ID = :NEW.Passenger_ID;
+    
+    -- RULE 1: Only infants can be LAP_INFANT or SEATED_INFANT
+    IF :NEW.Passenger_Type IN ('LAP_INFANT', 'SEATED_INFANT') AND v_Title != 'INF' THEN
+        RAISE_APPLICATION_ERROR(-20030, 
+            'Only passengers with Title INF can have Passenger_Type of LAP_INFANT or SEATED_INFANT');
+    END IF;
+    
+    -- RULE 2: Infants (Title=INF) must have appropriate Passenger_Type
+    IF v_Title = 'INF' AND :NEW.Passenger_Type = 'ADULT' THEN
+        RAISE_APPLICATION_ERROR(-20031, 
+            'Infant passengers must have Passenger_Type of LAP_INFANT or SEATED_INFANT, not ADULT');
+    END IF;
+    
+    -- RULE 3: LAP_INFANT must have NULL seat
+    IF :NEW.Passenger_Type = 'LAP_INFANT' AND :NEW.Row_Number IS NOT NULL THEN
+        RAISE_APPLICATION_ERROR(-20032, 
+            'Lap infants cannot have a seat assigned. Set Row_Number and Seat_Letter to NULL.');
+    END IF;
+    
+    -- RULE 4: LAP_INFANT must be FREE (Price_Charged = 0) - AUTO-CORRECT
+    IF :NEW.Passenger_Type = 'LAP_INFANT' THEN
+        :NEW.Price_Charged := 0;
+    END IF;
+    
+    -- RULE 5: SEATED_INFANT must have a seat
+    IF :NEW.Passenger_Type = 'SEATED_INFANT' AND :NEW.Row_Number IS NULL THEN
+        RAISE_APPLICATION_ERROR(-20033, 
+            'Seated infants must have a seat assigned. Please select a seat.');
+    END IF;
+    
+    -- RULE 6: SEATED_INFANT price = 50% of base price - AUTO-CALCULATE
+    IF :NEW.Passenger_Type = 'SEATED_INFANT' AND :NEW.Row_Number IS NOT NULL THEN
+        BEGIN
+            -- Get route from flight instance
+            SELECT fr.Route_ID INTO v_Route_ID
+            FROM Flight_Instance fi
+            JOIN Flight_Route fr ON fi.Route_ID = fr.Route_ID
+            WHERE fi.Instance_ID = :NEW.Instance_ID;
+            
+            -- Get class from seat row
+            SELECT arc.Class_ID INTO v_Class_ID
+            FROM Flight_Instance fi
+            JOIN Aircraft_Row_Class arc ON fi.Model_ID = arc.Model_ID AND arc.Row_Number = :NEW.Row_Number
+            WHERE fi.Instance_ID = :NEW.Instance_ID;
+            
+            -- Get base price and set to 50%
+            SELECT Base_Price INTO v_Base_Price
+            FROM Route_Pricing
+            WHERE Route_ID = v_Route_ID 
+            AND Class_ID = v_Class_ID
+            AND SYSDATE BETWEEN Valid_From AND Valid_To
+            AND ROWNUM = 1;
+            
+            :NEW.Price_Charged := v_Base_Price * 0.5;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                NULL; -- Keep app-provided price if pricing not found
+        END;
+    END IF;
+END;
+/
+
+-- Function: Calculate Infant Type based on booking context
+-- Returns 'LAP_INFANT' if this infant qualifies for lap (free), 'SEATED_INFANT' otherwise
+CREATE OR REPLACE FUNCTION FN_Get_Infant_Type(
+    p_Booking_ID   IN VARCHAR2,
+    p_Instance_ID  IN VARCHAR2,
+    p_Passenger_ID IN NUMBER
+) RETURN VARCHAR2 IS
+    v_Adult_Count NUMBER;
+    v_Lap_Infant_Count NUMBER;
+    v_Title VARCHAR2(10);
+BEGIN
+    -- Check if passenger is actually an infant
+    SELECT Title INTO v_Title FROM Passenger WHERE Passenger_ID = p_Passenger_ID;
+    IF v_Title != 'INF' THEN
+        RETURN 'ADULT';
+    END IF;
+    
+    -- Count adults in this booking for this flight
+    SELECT COUNT(*) INTO v_Adult_Count
+    FROM Reservation r
+    JOIN Passenger p ON r.Passenger_ID = p.Passenger_ID
+    WHERE r.Booking_ID = p_Booking_ID
+    AND r.Instance_ID = p_Instance_ID
+    AND p.Title NOT IN ('INF', 'CHD')
+    AND r.Passenger_Type = 'ADULT';
+    
+    -- Count existing lap infants in this booking for this flight
+    SELECT COUNT(*) INTO v_Lap_Infant_Count
+    FROM Reservation r
+    WHERE r.Booking_ID = p_Booking_ID
+    AND r.Instance_ID = p_Instance_ID
+    AND r.Passenger_Type = 'LAP_INFANT';
+    
+    -- If we have room for another lap infant (1 per adult), return LAP_INFANT
+    IF v_Lap_Infant_Count < v_Adult_Count THEN
+        RETURN 'LAP_INFANT';
+    ELSE
+        RETURN 'SEATED_INFANT';
+    END IF;
+END;
+/
+
+-- Function: Get infant price based on type
+-- LAP_INFANT = 0 (FREE)
+-- SEATED_INFANT = 50% of base price
+CREATE OR REPLACE FUNCTION FN_Get_Infant_Price(
+    p_Instance_ID  IN VARCHAR2,
+    p_Infant_Type  IN VARCHAR2,
+    p_Class_ID     IN VARCHAR2 DEFAULT 'ECO'
+) RETURN NUMBER IS
+    v_Base_Price NUMBER(10,2);
+    v_Route_ID VARCHAR2(10);
+BEGIN
+    -- LAP_INFANT is always FREE
+    IF p_Infant_Type = 'LAP_INFANT' THEN
+        RETURN 0;
+    END IF;
+    
+    -- For SEATED_INFANT, calculate 50% of base price
+    IF p_Infant_Type = 'SEATED_INFANT' THEN
+        SELECT fr.Route_ID INTO v_Route_ID
+        FROM Flight_Instance fi
+        JOIN Flight_Route fr ON fi.Route_ID = fr.Route_ID
+        WHERE fi.Instance_ID = p_Instance_ID;
+        
+        SELECT Base_Price INTO v_Base_Price
+        FROM Route_Pricing
+        WHERE Route_ID = v_Route_ID 
+        AND Class_ID = p_Class_ID
+        AND SYSDATE BETWEEN Valid_From AND Valid_To
+        AND ROWNUM = 1;
+        
+        RETURN v_Base_Price * 0.5;
+    END IF;
+    
+    -- Default: return 0
+    RETURN 0;
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        RETURN 0;
+END;
+/
+
+-- View: Booking summary with infant breakdown
+CREATE OR REPLACE VIEW View_Booking_Infant_Summary AS
+SELECT 
+    b.Booking_ID,
+    b.Contact_Email,
+    fi.Instance_ID,
+    COUNT(CASE WHEN r.Passenger_Type = 'ADULT' THEN 1 END) AS Adult_Count,
+    COUNT(CASE WHEN r.Passenger_Type = 'LAP_INFANT' THEN 1 END) AS Lap_Infant_Count,
+    COUNT(CASE WHEN r.Passenger_Type = 'SEATED_INFANT' THEN 1 END) AS Seated_Infant_Count,
+    SUM(r.Price_Charged) AS Total_Price,
+    SUM(CASE WHEN r.Passenger_Type = 'LAP_INFANT' THEN 0 ELSE r.Price_Charged END) AS Paid_Amount
+FROM Booking b
+JOIN Reservation r ON b.Booking_ID = r.Booking_ID
+JOIN Flight_Instance fi ON r.Instance_ID = fi.Instance_ID
+GROUP BY b.Booking_ID, b.Contact_Email, fi.Instance_ID;

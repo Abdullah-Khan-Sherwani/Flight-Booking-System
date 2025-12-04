@@ -232,20 +232,73 @@
     <!-- Passenger list display -->
     <div class="passenger-list">
         <h5>Passengers for this booking:</h5>
-        {% for passenger in passenger_data %}
-        <span class="passenger-badge">{{ passenger.title }}. {{ passenger.first_name }} {{ passenger.last_name }}</span>
+        {% set infant_counter = namespace(count=0) %}
+        {% set adult_counter = namespace(count=0) %}
+        {% set total_infants = namespace(count=0) %}
+        {% set passenger_list = passenger_data if passenger_data else [] %}
+        {% for passenger in passenger_list %}
+            {% if passenger.title != 'INF' %}
+                {% set adult_counter.count = adult_counter.count + 1 %}
+            {% else %}
+                {% set total_infants.count = total_infants.count + 1 %}
+            {% endif %}
         {% endfor %}
+        {% set lap_infants = [total_infants.count, adult_counter.count] | min %}
+        {% set seated_infants = total_infants.count - lap_infants %}
+        {% set seats_needed = adult_counter.count + seated_infants %}
+        
+        {% if passenger_list | length == 0 %}
+            {% set seats_needed = passengers | default(1) %}
+            {% set adult_counter = namespace(count=passengers | default(1)) %}
+        {% endif %}
+        
+        {% for passenger in passenger_list %}
+        <span class="passenger-badge {% if passenger.title == 'INF' %}{% if infant_counter.count < adult_counter.count %}bg-success{% else %}bg-warning text-dark{% endif %}{% endif %}">
+            {{ passenger.title }}. {{ passenger.first_name }} {{ passenger.last_name }}
+            {% if passenger.title == 'INF' %}
+                {% if infant_counter.count < adult_counter.count %}
+                    <small>(Lap - FREE, no seat)</small>
+                {% else %}
+                    <small>(Seated - 50% price)</small>
+                {% endif %}
+                {% set infant_counter.count = infant_counter.count + 1 %}
+            {% else %}
+                <small>(needs seat)</small>
+            {% endif %}
+        </span>
+        {% endfor %}
+        
+        {% if passenger_list | length == 0 %}
+        <span class="passenger-badge">{{ passengers | default(1) }} passenger(s)</span>
+        {% endif %}
+        
+        <!-- Clear seat requirement message -->
+        <div class="alert alert-info mt-3 mb-0">
+            <strong>🪑 Seats Required: {{ seats_needed | default(1) }}</strong><br>
+            <small>
+                {{ adult_counter.count | default(1) }} adult(s) need seats.
+                {% if lap_infants is defined and lap_infants > 0 %}
+                    {{ lap_infants }} infant(s) travel FREE on adult's lap (no seat needed).
+                {% endif %}
+                {% if seated_infants is defined and seated_infants > 0 %}
+                    {{ seated_infants }} extra infant(s) need their own seats at 50% price.
+                {% endif %}
+            </small>
+        </div>
+        
         <div class="seat-assignment-display" id="seat-assignments">
-            <small>Select seats below. Seats will be assigned in the order passengers are listed.</small>
+            <small>Select {{ seats_needed | default(1) }} seat(s) below.</small>
         </div>
     </div>
 
     <!-- Debug Information -->
     <div class="debug-info">
         <strong>Debug Info:</strong><br>
-        Travel Class from Flask: <span id="debug-travel-class">{{ travel_class }}</span><br>
-        Passengers: {{ passengers }}<br>
-        Trip Type: {{ trip_type }}
+        Travel Class: <span id="debug-travel-class">{{ travel_class | default('ECO') }}</span><br>
+        Total Passengers: {{ passengers | default(1) }}<br>
+        Adults: {{ adult_counter.count | default(1) }} | Lap Infants: {{ lap_infants | default(0) }} | Seated Infants: {{ seated_infants | default(0) }}<br>
+        <strong>Seats Needed: {{ seats_needed | default(1) }}</strong><br>
+        Trip Type: {{ trip_type | default('one_way') }}
     </div>
 
     <!-- Current Class Indicator -->
@@ -319,18 +372,71 @@
     const travelClass = '{{ travel_class | default("ECO") }}';
     const tripType = '{{ trip_type | default("one_way") }}';
     
-    // Passenger names for display
-    const passengerNames = [
-        {% if passenger_data %}
+    // Passenger data including titles for infant detection
+    const passengerData = [
+        {% if passenger_data and passenger_data|length > 0 %}
         {% for p in passenger_data %}
-        "{{ p.title }}. {{ p.first_name }} {{ p.last_name }}"{% if not loop.last %},{% endif %}
+        {
+            name: "{{ p.title }}. {{ p.first_name }} {{ p.last_name }}",
+            title: "{{ p.title }}",
+            isInfant: "{{ p.title }}" === "INF"
+        }{% if not loop.last %},{% endif %}
         {% endfor %}
+        {% else %}
+        {
+            name: "Passenger 1",
+            title: "MR",
+            isInfant: false
+        }
         {% endif %}
     ];
     
+    console.log('=== PASSENGER DATA FROM FLASK ===');
+    console.log('Raw passenger data:', passengerData);
+    console.log('Passenger count from Flask:', passengerCount);
+    
+    // Passenger names for display (backward compatibility)
+    const passengerNames = passengerData.map(p => p.name);
+    
+    // Count adults and infants
+    const infantCount = passengerData.filter(p => p.isInfant).length;
+    const adultCount = passengerCount - infantCount;
+    
+    // Calculate lap infants (free, no seat) vs seated infants (need seat)
+    // Rule: First infant per adult gets lap (free), extra infants need seats
+    const lapInfantCount = Math.min(infantCount, adultCount);
+    const seatedInfantCount = infantCount - lapInfantCount;
+    
+    // Passengers needing seats = adults + seated infants
+    const passengersNeedingSeats = adultCount + seatedInfantCount;
+    
+    console.log('=== INFANT BREAKDOWN ===');
+    console.log('Total infants:', infantCount);
+    console.log('Lap infants (FREE, no seat):', lapInfantCount);
+    console.log('Seated infants (50% price, need seat):', seatedInfantCount);
+    console.log('Passengers needing seats:', passengersNeedingSeats);
+    
+    // Mark which infants are lap vs seated (first N infants are lap, rest are seated)
+    let lapInfantCounter = 0;
+    passengerData.forEach(p => {
+        if (p.isInfant) {
+            if (lapInfantCounter < adultCount) {
+                p.infantType = 'LAP';
+                p.needsSeat = false;
+                lapInfantCounter++;
+            } else {
+                p.infantType = 'SEATED';
+                p.needsSeat = true;
+            }
+        } else {
+            p.infantType = null;
+            p.needsSeat = true;
+        }
+    });
+    
     // Get real booked seats from Flask
-    const bookedSeatsOutbound = {{ booked_outbound_seats | tojson | safe }};
-    const bookedSeatsReturn = {{ booked_return_seats | tojson | safe }};
+    const bookedSeatsOutbound = {{ booked_outbound_seats | default([]) | tojson | safe }};
+    const bookedSeatsReturn = {{ booked_return_seats | default([]) | tojson | safe }};
 
     // Debug output to console
     console.log('=== DEBUG INFO ===');
@@ -469,11 +575,12 @@
                 selectionList.splice(idx, 1);
                 seat.classList.remove("selected");
             } else {
-                if (selectionList.length < passengerCount) {
+                // Need seats for adults + seated infants
+                if (selectionList.length < passengersNeedingSeats) {
                     selectionList.push(seatId);
                     seat.classList.add("selected");
                 } else {
-                    alert(`You can only select ${passengerCount} seat(s). Please deselect a seat first.`);
+                    alert(`You can only select ${passengersNeedingSeats} seat(s) (${adultCount} adults + ${seatedInfantCount} seated infants). Please deselect a seat first.`);
                 }
             }
 
@@ -500,18 +607,51 @@
         const display = document.getElementById('seat-assignments');
         if (!display) return;
         
-        if (selectedOutbound.length === 0) {
-            display.innerHTML = '<small>Select seats below. Seats will be assigned in the order passengers are listed.</small>';
+        if (selectedOutbound.length === 0 && passengersNeedingSeats > 0) {
+            let msg = '<small>Select seats below. ';
+            if (lapInfantCount > 0) {
+                msg += `<strong>${lapInfantCount} lap infant(s) travel FREE</strong> (no seat needed). `;
+            }
+            if (seatedInfantCount > 0) {
+                msg += `<strong>${seatedInfantCount} seated infant(s) need seats</strong> (50% price). `;
+            }
+            msg += '</small>';
+            display.innerHTML = msg;
             return;
         }
         
         let html = '<strong>Seat Assignments:</strong><br>';
-        for (let i = 0; i < passengerNames.length; i++) {
-            const outboundSeat = selectedOutbound[i] || '<em>Not selected</em>';
-            const returnSeat = tripType === 'round_trip' ? (selectedReturn[i] || '<em>Not selected</em>') : '';
+        let seatIndex = 0;  // Track seat assignment for passengers needing seats
+        
+        for (let i = 0; i < passengerData.length; i++) {
+            const passenger = passengerData[i];
+            let outboundSeat, returnSeat;
             
-            html += `<div style="margin: 5px 0;">Passenger ${i + 1} (${passengerNames[i]}): <strong>${outboundSeat}</strong>`;
-            if (tripType === 'round_trip') {
+            if (passenger.isInfant && passenger.infantType === 'LAP') {
+                // Lap infants don't get seats - FREE
+                outboundSeat = '<span class="badge bg-success">On Lap (FREE)</span>';
+                returnSeat = '<span class="badge bg-success">On Lap (FREE)</span>';
+            } else {
+                // Adults and seated infants need seats
+                outboundSeat = selectedOutbound[seatIndex] || '<em>Not selected</em>';
+                returnSeat = tripType === 'round_trip' ? (selectedReturn[seatIndex] || '<em>Not selected</em>') : '';
+                
+                if (passenger.isInfant && passenger.infantType === 'SEATED') {
+                    // Mark seated infant with price indicator
+                    if (selectedOutbound[seatIndex]) {
+                        outboundSeat = `<span class="badge bg-warning text-dark">${selectedOutbound[seatIndex]} (50% price)</span>`;
+                    }
+                    if (tripType === 'round_trip' && selectedReturn[seatIndex]) {
+                        returnSeat = `<span class="badge bg-warning text-dark">${selectedReturn[seatIndex]} (50% price)</span>`;
+                    }
+                }
+                seatIndex++;
+            }
+            
+            html += `<div style="margin: 5px 0;">Passenger ${i + 1} (${passenger.name}): <strong>${outboundSeat}</strong>`;
+            if (tripType === 'round_trip' && !(passenger.isInfant && passenger.infantType === 'LAP')) {
+                html += ` / <strong>${returnSeat}</strong> (return)`;
+            } else if (tripType === 'round_trip' && passenger.isInfant && passenger.infantType === 'LAP') {
                 html += ` / <strong>${returnSeat}</strong> (return)`;
             }
             html += '</div>';
@@ -520,28 +660,71 @@
     }
 
     function confirmBooking() {
-        if (selectedOutbound.length !== passengerCount) {
-            alert(`Please select exactly ${passengerCount} outbound seat(s).`);
+        // Need seats for adults + seated infants
+        if (selectedOutbound.length !== passengersNeedingSeats) {
+            alert(`Please select exactly ${passengersNeedingSeats} outbound seat(s) (${adultCount} adults + ${seatedInfantCount} seated infants).`);
             return;
         }
 
         // Only validate return seats for round trips
         if (tripType === 'round_trip') {
-            if (selectedReturn.length !== passengerCount) {
-                alert(`Please select exactly ${passengerCount} return seat(s).`);
+            if (selectedReturn.length !== passengersNeedingSeats) {
+                alert(`Please select exactly ${passengersNeedingSeats} return seat(s) (${adultCount} adults + ${seatedInfantCount} seated infants).`);
                 return;
             }
         }
         
-        // Show confirmation with seat assignments
+        // Build final seat arrays including "INFANT" placeholders for lap infants only
+        const finalOutboundSeats = [];
+        const finalReturnSeats = [];
+        let seatIndex = 0;
+        
+        for (let i = 0; i < passengerData.length; i++) {
+            const passenger = passengerData[i];
+            
+            if (passenger.isInfant && passenger.infantType === 'LAP') {
+                // Lap infant: no seat, use placeholder
+                finalOutboundSeats.push('INFANT');
+                if (tripType === 'round_trip') {
+                    finalReturnSeats.push('INFANT');
+                }
+            } else {
+                // Adult or seated infant: use actual seat
+                finalOutboundSeats.push(selectedOutbound[seatIndex]);
+                if (tripType === 'round_trip') {
+                    finalReturnSeats.push(selectedReturn[seatIndex]);
+                }
+                seatIndex++;
+            }
+        }
+        
+        // Show confirmation with seat assignments and pricing
         let confirmMsg = 'Confirm seat assignments:\n\n';
-        for (let i = 0; i < passengerNames.length; i++) {
-            confirmMsg += `${passengerNames[i]}: Seat ${selectedOutbound[i]}`;
-            if (tripType === 'round_trip') {
-                confirmMsg += ` (outbound), Seat ${selectedReturn[i]} (return)`;
+        for (let i = 0; i < passengerData.length; i++) {
+            const passenger = passengerData[i];
+            if (passenger.isInfant && passenger.infantType === 'LAP') {
+                confirmMsg += `${passenger.name}: On Lap (FREE)`;
+            } else if (passenger.isInfant && passenger.infantType === 'SEATED') {
+                confirmMsg += `${passenger.name}: Seat ${finalOutboundSeats[i]} (50% price)`;
+                if (tripType === 'round_trip') {
+                    confirmMsg += ` / Seat ${finalReturnSeats[i]} (return)`;
+                }
+            } else {
+                confirmMsg += `${passenger.name}: Seat ${finalOutboundSeats[i]}`;
+                if (tripType === 'round_trip') {
+                    confirmMsg += ` / Seat ${finalReturnSeats[i]} (return)`;
+                }
             }
             confirmMsg += '\n';
         }
+        
+        if (lapInfantCount > 0) {
+            confirmMsg += `\n${lapInfantCount} lap infant(s) travel FREE.\n`;
+        }
+        if (seatedInfantCount > 0) {
+            confirmMsg += `${seatedInfantCount} seated infant(s) at 50% price.\n`;
+        }
+        
         confirmMsg += '\nProceed to booking confirmation?';
         
         if (!confirm(confirmMsg)) {
@@ -566,8 +749,8 @@
             console.log('Submitting to process-booking endpoint');
         }
 
-        // Add outbound seats
-        selectedOutbound.forEach(seat => {
+        // Add outbound seats (including INFANT placeholders)
+        finalOutboundSeats.forEach(seat => {
             const input = document.createElement('input');
             input.type = 'hidden';
             input.name = 'selected_outbound_seats';
@@ -575,9 +758,9 @@
             form.appendChild(input);
         });
 
-        // Add return seats if round trip
+        // Add return seats if round trip (including INFANT placeholders)
         if (tripType === 'round_trip') {
-            selectedReturn.forEach(seat => {
+            finalReturnSeats.forEach(seat => {
                 const input = document.createElement('input');
                 input.type = 'hidden';
                 input.name = 'selected_return_seats';
