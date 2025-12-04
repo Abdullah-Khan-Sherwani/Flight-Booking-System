@@ -265,13 +265,33 @@
             </div>
         </div>
 
+        <!-- Quick Actions for Logged-in Users -->
+        {% if session.get('user_id') %}
+        <div class="alert alert-primary mb-4">
+            <div class="d-flex align-items-center justify-content-between flex-wrap">
+                <div class="mb-2 mb-md-0">
+                    <i class="fas fa-user-circle fa-lg me-2"></i>
+                    <strong>Quick Add:</strong> Add yourself or passengers from your previous bookings
+                </div>
+                <div>
+                    <button type="button" class="btn btn-primary me-2" onclick="addMyself()">
+                        <i class="fas fa-user-plus"></i> Add Myself
+                    </button>
+                    <button type="button" class="btn btn-outline-primary" onclick="openPastPassengersModal()">
+                        <i class="fas fa-history"></i> From Past Bookings
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
         <!-- Add Passenger Button -->
         <div class="text-center mb-4">
             <button type="button" class="btn btn-outline-primary" onclick="addPassenger()">
                 <i class="fas fa-plus"></i> Add Another Passenger
             </button>
             <div class="mt-2">
-                <small class="text-muted">Total Passengers: <span id="passengerCountDisplay">1</span> (Max: 6)</small>
+                <small class="text-muted">Total Passengers: <span id="passengerCountDisplay2">1</span> (Max: 6)</small>
             </div>
         </div>
 
@@ -438,6 +458,146 @@
     function updatePassengerCount() {
         document.getElementById('passengerCount').value = passengerCount;
         document.getElementById('passengerCountDisplay').textContent = passengerCount;
+        // Also update the second counter if it exists
+        const display2 = document.getElementById('passengerCountDisplay2');
+        if (display2) display2.textContent = passengerCount;
+    }
+
+    // =================================================================
+    // "Add Myself" Feature - Adds logged-in user as a passenger
+    // =================================================================
+    let myselfAdded = false;  // Track if user already added themselves
+    
+    async function addMyself() {
+        // Check if user already added themselves
+        if (myselfAdded) {
+            showToast('You have already added yourself as a passenger.', 'warning');
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/my-profile');
+            
+            if (!response.ok) {
+                if (response.status === 401) {
+                    alert('Please log in to use this feature.');
+                    return;
+                }
+                throw new Error('Failed to load profile.');
+            }
+            
+            const profile = await response.json();
+            
+            if (profile.error) {
+                throw new Error(profile.error);
+            }
+            
+            // Find an empty form or use the first form if empty
+            const formIndex = findEmptyOrCurrentPassengerForm();
+            
+            if (formIndex === -1) {
+                // All forms are filled, add a new passenger form
+                if (passengerCount >= 6) {
+                    alert('Maximum 6 passengers allowed. Please remove a passenger first.');
+                    return;
+                }
+                addPassenger();
+                // Fill the newly added form after a short delay
+                setTimeout(() => fillMyselfForm(passengerCount - 1, profile), 100);
+            } else {
+                // Fill the empty form found
+                fillMyselfForm(formIndex, profile);
+            }
+            
+            myselfAdded = true;
+            showToast('Your details have been added!', 'success');
+            
+        } catch (error) {
+            console.error('Error loading profile:', error);
+            alert('Failed to load your profile. Please enter details manually.');
+        }
+    }
+    
+    function fillMyselfForm(formIndex, profile) {
+        // Mark this passenger as "myself" with a special flag
+        let isSelfField = document.getElementById(`is_self_${formIndex}`);
+        if (!isSelfField) {
+            isSelfField = document.createElement('input');
+            isSelfField.type = 'hidden';
+            isSelfField.id = `is_self_${formIndex}`;
+            isSelfField.name = `is_self_${formIndex}`;
+            document.getElementById('passengerForm').appendChild(isSelfField);
+        }
+        isSelfField.value = 'true';
+        
+        // If user has an existing passenger profile, store the ID
+        if (profile.hasProfile && profile.passengerId) {
+            let existingIdField = document.getElementById(`existing_passenger_id_${formIndex}`);
+            if (!existingIdField) {
+                existingIdField = document.createElement('input');
+                existingIdField.type = 'hidden';
+                existingIdField.id = `existing_passenger_id_${formIndex}`;
+                existingIdField.name = `existing_passenger_id_${formIndex}`;
+                document.getElementById('passengerForm').appendChild(existingIdField);
+            }
+            existingIdField.value = profile.passengerId;
+        }
+        
+        // Fill the form fields
+        if (profile.hasProfile) {
+            // Title
+            const titleSelect = document.getElementById(`title_${formIndex}`);
+            if (titleSelect && profile.title) titleSelect.value = profile.title;
+            
+            // First Name
+            const firstNameInput = document.getElementById(`first_name_${formIndex}`);
+            if (firstNameInput && profile.firstName) firstNameInput.value = profile.firstName;
+            
+            // Last Name
+            const lastNameInput = document.getElementById(`last_name_${formIndex}`);
+            if (lastNameInput && profile.lastName) lastNameInput.value = profile.lastName;
+            
+            // Date of Birth
+            const dobInput = document.getElementById(`date_of_birth_${formIndex}`);
+            if (dobInput && profile.dateOfBirth) dobInput.value = profile.dateOfBirth;
+            
+            // Gender
+            if (profile.gender) {
+                const genderRadio = document.querySelector(`input[name="gender_${formIndex}"][value="${profile.gender}"]`);
+                if (genderRadio) genderRadio.checked = true;
+            }
+            
+            // Nationality
+            const nationalityInput = document.getElementById(`nationality_${formIndex}`);
+            if (nationalityInput && profile.nationality) nationalityInput.value = profile.nationality;
+            
+            // Passport Number
+            const passportInput = document.getElementById(`passport_number_${formIndex}`);
+            if (passportInput && profile.passportNum) passportInput.value = profile.passportNum;
+        }
+        
+        // Add visual indicator that this is "myself"
+        highlightMyselfForm(formIndex);
+        
+        console.log(`Filled form ${formIndex} as MYSELF (is_self=true, passenger_id=${profile.passengerId || 'new'})`);
+    }
+    
+    function highlightMyselfForm(formIndex) {
+        // Add a visual indicator to show this is the user's own passenger entry
+        const containers = document.querySelectorAll('.passenger-form-container');
+        if (containers[formIndex]) {
+            const header = containers[formIndex].querySelector('.passenger-header');
+            if (header) {
+                // Add a badge or modify the header
+                const existingBadge = header.querySelector('.myself-badge');
+                if (!existingBadge) {
+                    const badge = document.createElement('span');
+                    badge.className = 'badge bg-success ms-2 myself-badge';
+                    badge.innerHTML = '<i class="fas fa-user-check"></i> You';
+                    header.querySelector('h5').appendChild(badge);
+                }
+            }
+        }
     }
 
     // Initialize the form
@@ -515,6 +675,403 @@
         });
     });
 </script>
+
+<!-- Past Passengers Modal -->
+<div class="modal fade" id="pastPassengersModal" tabindex="-1" aria-labelledby="pastPassengersModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title" id="pastPassengersModalLabel">
+                    <i class="fas fa-history"></i> Add from Past Bookings
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="pastPassengersLoading" class="text-center py-4">
+                    <div class="spinner-border text-success" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2">Loading past passengers...</p>
+                </div>
+                <div id="pastPassengersError" class="alert alert-danger d-none">
+                    <i class="fas fa-exclamation-circle"></i> <span id="errorMessage"></span>
+                </div>
+                <div id="pastPassengersEmpty" class="text-center py-4 d-none">
+                    <i class="fas fa-users fa-3x text-muted mb-3"></i>
+                    <h5>No Past Passengers Found</h5>
+                    <p class="text-muted">You haven't booked flights for anyone else yet.</p>
+                </div>
+                <div id="pastPassengersList" class="d-none">
+                    <p class="text-muted mb-3">
+                        <i class="fas fa-info-circle"></i> 
+                        Select a passenger to auto-fill their details. Click on a row to expand trip history.
+                    </p>
+                    <div class="table-responsive">
+                        <table class="table table-hover" id="pastPassengersTable">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Type</th>
+                                    <th>Gender</th>
+                                    <th>Nationality</th>
+                                    <th>DOB</th>
+                                    <th>Last Trip</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pastPassengersTableBody">
+                                <!-- Populated by JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Trip History Sub-Modal -->
+<div class="modal fade" id="tripHistoryModal" tabindex="-1" aria-labelledby="tripHistoryModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title" id="tripHistoryModalLabel">
+                    <i class="fas fa-plane"></i> Trip History
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <h6 id="tripHistoryPassengerName" class="mb-3"></h6>
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Booking</th>
+                                <th>Flight</th>
+                                <th>Route</th>
+                                <th>Date</th>
+                                <th>Seat</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tripHistoryTableBody">
+                            <!-- Populated by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    /* Past Passengers Modal Styles */
+    #pastPassengersModal .passenger-row {
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+    #pastPassengersModal .passenger-row:hover {
+        background-color: #e8f5e9 !important;
+    }
+    #pastPassengersModal .badge-registered {
+        background-color: #28a745;
+    }
+    #pastPassengersModal .badge-guest {
+        background-color: #6c757d;
+    }
+    #pastPassengersModal .btn-use-passenger {
+        white-space: nowrap;
+    }
+    .trip-route {
+        font-weight: 500;
+    }
+    .trip-date {
+        font-size: 0.85em;
+        color: #666;
+    }
+</style>
+
+<script>
+    // Past Passengers Feature
+    let pastPassengersData = [];
+    let currentPassengerIndex = 0; // Track which passenger form to fill
+    
+    function openPastPassengersModal() {
+        const modal = new bootstrap.Modal(document.getElementById('pastPassengersModal'));
+        modal.show();
+        loadPastPassengers();
+    }
+    
+    async function loadPastPassengers() {
+        const loadingEl = document.getElementById('pastPassengersLoading');
+        const errorEl = document.getElementById('pastPassengersError');
+        const emptyEl = document.getElementById('pastPassengersEmpty');
+        const listEl = document.getElementById('pastPassengersList');
+        
+        // Reset states
+        loadingEl.classList.remove('d-none');
+        errorEl.classList.add('d-none');
+        emptyEl.classList.add('d-none');
+        listEl.classList.add('d-none');
+        
+        try {
+            const response = await fetch('/api/past-passengers');
+            
+            if (!response.ok) {
+                if (response.status === 401) {
+                    throw new Error('Please log in to access past bookings.');
+                }
+                throw new Error('Failed to load past passengers.');
+            }
+            
+            const data = await response.json();
+            
+            loadingEl.classList.add('d-none');
+            
+            if (data.error) {
+                throw new Error(data.error);
+            }
+            
+            if (!data || data.length === 0) {
+                emptyEl.classList.remove('d-none');
+                return;
+            }
+            
+            pastPassengersData = data;
+            renderPastPassengers(data);
+            listEl.classList.remove('d-none');
+            
+        } catch (error) {
+            loadingEl.classList.add('d-none');
+            errorEl.classList.remove('d-none');
+            document.getElementById('errorMessage').textContent = error.message;
+        }
+    }
+    
+    function renderPastPassengers(passengers) {
+        const tbody = document.getElementById('pastPassengersTableBody');
+        tbody.innerHTML = '';
+        
+        passengers.forEach((pax, index) => {
+            const lastTrip = pax.recentTrips && pax.recentTrips.length > 0 ? pax.recentTrips[0] : null;
+            const lastTripText = lastTrip 
+                ? `${lastTrip.fromCity} → ${lastTrip.toCity}` 
+                : 'No trips';
+            const lastTripDate = lastTrip 
+                ? new Date(lastTrip.departureTime).toLocaleDateString() 
+                : '';
+            
+            const row = document.createElement('tr');
+            row.className = 'passenger-row';
+            row.innerHTML = `
+                <td>
+                    <strong>${pax.title || ''} ${pax.firstName} ${pax.lastName}</strong>
+                    ${pax.passportNum ? `<br><small class="text-muted">Passport: ${pax.passportNum}</small>` : ''}
+                </td>
+                <td>
+                    <span class="badge ${pax.isRegisteredUser ? 'badge-registered' : 'badge-guest'}">
+                        ${pax.isRegisteredUser ? 'Registered' : 'Guest'}
+                    </span>
+                </td>
+                <td>${pax.gender || '-'}</td>
+                <td>${pax.nationality || '-'}</td>
+                <td>${pax.dateOfBirth || '-'}</td>
+                <td>
+                    <span class="trip-route">${lastTripText}</span>
+                    ${lastTripDate ? `<br><span class="trip-date">${lastTripDate}</span>` : ''}
+                    ${pax.recentTrips && pax.recentTrips.length > 1 
+                        ? `<br><a href="#" onclick="showTripHistory(${index}); return false;" class="small">
+                            View ${pax.recentTrips.length} trips</a>` 
+                        : ''}
+                </td>
+                <td>
+                    <button type="button" class="btn btn-sm btn-success btn-use-passenger" 
+                            onclick="usePassenger(${index})">
+                        <i class="fas fa-check"></i> Use
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+    
+    function showTripHistory(passengerIndex) {
+        const pax = pastPassengersData[passengerIndex];
+        if (!pax || !pax.recentTrips) return;
+        
+        document.getElementById('tripHistoryPassengerName').textContent = 
+            `${pax.title || ''} ${pax.firstName} ${pax.lastName}`;
+        
+        const tbody = document.getElementById('tripHistoryTableBody');
+        tbody.innerHTML = '';
+        
+        pax.recentTrips.forEach(trip => {
+            const depDate = new Date(trip.departureTime);
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>
+                    <strong>${trip.bookingId}</strong>
+                    <br><small class="text-muted">${trip.reservationId}</small>
+                </td>
+                <td>${trip.flightNumber}</td>
+                <td>
+                    <strong>${trip.fromCity} → ${trip.toCity}</strong>
+                    <br><small>${trip.fromAirport} → ${trip.toAirport}</small>
+                </td>
+                <td>
+                    ${depDate.toLocaleDateString()}
+                    <br><small>${depDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</small>
+                </td>
+                <td>${trip.seatNumber || '-'}</td>
+                <td>
+                    <span class="badge bg-${getStatusColor(trip.ticketStatus)}">${trip.ticketStatus}</span>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+        
+        // Show the trip history modal
+        const tripModal = new bootstrap.Modal(document.getElementById('tripHistoryModal'));
+        tripModal.show();
+    }
+    
+    function getStatusColor(status) {
+        switch(status) {
+            case 'ISSUED': return 'primary';
+            case 'CHECKED_IN': return 'info';
+            case 'BOARDED': return 'success';
+            case 'CANCELLED': return 'danger';
+            case 'NO_SHOW': return 'warning';
+            default: return 'secondary';
+        }
+    }
+    
+    function usePassenger(passengerIndex) {
+        const pax = pastPassengersData[passengerIndex];
+        if (!pax) return;
+        
+        // Find the first empty passenger form or use the current one
+        const formIndex = findEmptyOrCurrentPassengerForm();
+        
+        if (formIndex === -1) {
+            // All forms are filled, ask if user wants to add another
+            if (passengerCount >= 6) {
+                alert('Maximum 6 passengers allowed. Please remove a passenger first.');
+                return;
+            }
+            
+            if (confirm('All passenger forms are filled. Add a new passenger with these details?')) {
+                addPassenger();
+                // Fill the newly added form
+                setTimeout(() => fillPassengerForm(passengerCount - 1, pax), 100);
+            }
+            return;
+        }
+        
+        fillPassengerForm(formIndex, pax);
+        
+        // Close the modal
+        const modal = bootstrap.Modal.getInstance(document.getElementById('pastPassengersModal'));
+        if (modal) modal.hide();
+        
+        // Show success message
+        showToast(`Passenger details filled: ${pax.firstName} ${pax.lastName}`);
+    }
+    
+    function findEmptyOrCurrentPassengerForm() {
+        // Check each form starting from the first
+        for (let i = 0; i < passengerCount; i++) {
+            const firstName = document.getElementById(`first_name_${i}`);
+            const lastName = document.getElementById(`last_name_${i}`);
+            
+            // If both name fields are empty, use this form
+            if (firstName && lastName && !firstName.value.trim() && !lastName.value.trim()) {
+                return i;
+            }
+        }
+        return -1; // No empty form found
+    }
+    
+    function fillPassengerForm(formIndex, pax) {
+        // Title
+        const titleSelect = document.getElementById(`title_${formIndex}`);
+        if (titleSelect) titleSelect.value = pax.title || '';
+        
+        // First Name
+        const firstNameInput = document.getElementById(`first_name_${formIndex}`);
+        if (firstNameInput) firstNameInput.value = pax.firstName || '';
+        
+        // Last Name
+        const lastNameInput = document.getElementById(`last_name_${formIndex}`);
+        if (lastNameInput) lastNameInput.value = pax.lastName || '';
+        
+        // Date of Birth
+        const dobInput = document.getElementById(`date_of_birth_${formIndex}`);
+        if (dobInput && pax.dateOfBirth) dobInput.value = pax.dateOfBirth;
+        
+        // Gender
+        if (pax.gender) {
+            const genderRadio = document.querySelector(`input[name="gender_${formIndex}"][value="${pax.gender}"]`);
+            if (genderRadio) genderRadio.checked = true;
+        }
+        
+        // Nationality
+        const nationalityInput = document.getElementById(`nationality_${formIndex}`);
+        if (nationalityInput) nationalityInput.value = pax.nationality || 'Pakistani';
+        
+        // Passport Number
+        const passportInput = document.getElementById(`passport_number_${formIndex}`);
+        if (passportInput) passportInput.value = pax.passportNum || '';
+        
+        // Store the passenger ID for later use when submitting
+        // Create a hidden field if it doesn't exist
+        let hiddenIdField = document.getElementById(`existing_passenger_id_${formIndex}`);
+        if (!hiddenIdField) {
+            hiddenIdField = document.createElement('input');
+            hiddenIdField.type = 'hidden';
+            hiddenIdField.id = `existing_passenger_id_${formIndex}`;
+            hiddenIdField.name = `existing_passenger_id_${formIndex}`;
+            const form = document.getElementById('passengerForm');
+            form.appendChild(hiddenIdField);
+        }
+        hiddenIdField.value = pax.passengerId;
+        
+        console.log(`Filled passenger form ${formIndex} with passenger ID ${pax.passengerId}`);
+    }
+    
+    function showToast(message, type = 'success') {
+        // Create a toast notification with different types
+        const bgClass = type === 'warning' ? 'bg-warning text-dark' : 
+                       type === 'error' ? 'bg-danger text-white' : 'bg-success text-white';
+        const icon = type === 'warning' ? 'fa-exclamation-triangle' : 
+                    type === 'error' ? 'fa-times-circle' : 'fa-check-circle';
+        
+        const toast = document.createElement('div');
+        toast.className = 'position-fixed bottom-0 end-0 p-3';
+        toast.style.zIndex = '9999';
+        toast.innerHTML = `
+            <div class="toast show ${bgClass}" role="alert">
+                <div class="toast-body">
+                    <i class="fas ${icon}"></i> ${message}
+                </div>
+            </div>
+        `;
+        document.body.appendChild(toast);
+        
+        setTimeout(() => {
+            toast.remove();
+        }, 3000);
+    }
+</script>
+
+<!-- Bootstrap JS Bundle (required for modals) -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 
 </body>
 </html>

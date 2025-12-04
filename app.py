@@ -74,6 +74,9 @@ def login():
                 passenger = cursor.fetchone()
                 if passenger:
                     session['user_first_name'] = passenger[0]
+                else:
+                    # Fall back to email prefix if no passenger profile exists
+                    session['user_first_name'] = user[1].split('@')[0].capitalize()
                 
                 return redirect(url_for('dashboard'))
             else:
@@ -288,6 +291,53 @@ def account_info():
     except Exception as e:
         print("Error loading account info:", e)
         return render_template('error.html', error="Error loading account information")
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.route('/api/delete-account', methods=['POST'])
+def delete_account():
+    """
+    Permanently delete user account and all associated data.
+    Uses the USP_Delete_User_Account stored procedure for cascading delete.
+    """
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    
+    user_id = session['user_id']
+    
+    # Get confirmation from request
+    data = request.get_json()
+    if not data or not data.get('confirm'):
+        return jsonify({'success': False, 'error': 'Deletion not confirmed'}), 400
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Call the stored procedure for cascading delete
+        rows_deleted = cursor.var(int)
+        cursor.callproc('USP_Delete_User_Account', [user_id, rows_deleted])
+        
+        # Clear session after successful deletion
+        session.clear()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Account deleted successfully',
+            'rows_deleted': rows_deleted.getvalue()
+        })
+        
+    except Exception as e:
+        conn.rollback()
+        error_msg = str(e)
+        print(f"Error deleting account: {error_msg}")
+        
+        # Handle specific Oracle errors
+        if 'ORA-20100' in error_msg:
+            return jsonify({'success': False, 'error': 'User account not found'}), 404
+        
+        return jsonify({'success': False, 'error': 'Failed to delete account. Please try again.'}), 500
     finally:
         cursor.close()
         conn.close()
@@ -965,6 +1015,215 @@ def get_seat_status(flight_id):
         cursor.close()
         conn.close()
 
+
+# =============================================================================
+# API: Get My Profile (For "Add Myself" feature)
+# =============================================================================
+@app.route('/api/my-profile')
+def api_my_profile():
+    """
+    Get the logged-in user's passenger profile details.
+    Used by "Add Myself" button to auto-fill passenger form.
+    Returns the user's linked passenger profile if it exists,
+    otherwise returns basic info from App_User table.
+    """
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'Unauthorized. Please log in.'}), 401
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # First, check if user has a linked passenger profile
+        cursor.execute("""
+            SELECT 
+                p.Passenger_ID,
+                p.Title,
+                p.First_Name,
+                p.Last_Name,
+                p.Gender,
+                p.Nationality,
+                TO_CHAR(p.Date_Of_Birth, 'YYYY-MM-DD') AS Date_Of_Birth,
+                p.Passport_Num
+            FROM Passenger p
+            WHERE p.Linked_User_ID = :user_id
+        """, user_id=user_id)
+        
+        passenger = cursor.fetchone()
+        
+        if passenger:
+            # User has an existing passenger profile
+            return jsonify({
+                'hasProfile': True,
+                'passengerId': passenger[0],
+                'title': passenger[1],
+                'firstName': passenger[2],
+                'lastName': passenger[3],
+                'gender': passenger[4],
+                'nationality': passenger[5],
+                'dateOfBirth': passenger[6],
+                'passportNum': passenger[7]
+            })
+        else:
+            # No passenger profile yet - return basic user info
+            cursor.execute("""
+                SELECT Email, Phone_Number
+                FROM App_User
+                WHERE User_ID = :user_id
+            """, user_id=user_id)
+            
+            user_info = cursor.fetchone()
+            
+            return jsonify({
+                'hasProfile': False,
+                'passengerId': None,
+                'email': user_info[0] if user_info else None,
+                'phone': user_info[1] if user_info else None
+            })
+            
+    except Exception as e:
+        print(f"Error getting user profile: {e}")
+        return jsonify({'error': 'Failed to load profile'}), 500
+        
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# =============================================================================
+# API: Past Passengers (Add from past bookings feature)
+# =============================================================================
+@app.route('/api/past-passengers')
+def api_past_passengers():
+    """
+    Get passengers previously booked by the current logged-in user.
+    Excludes the user's own passenger profile (Linked_User_ID = current user).
+    Returns JSON with passenger details and recent trip history.
+    """
+    # Authentication check
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'Unauthorized. Please log in.'}), 401
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Query past passengers with their most recent trips
+        # Uses direct joins (View_Past_Passengers can be used alternatively)
+        cursor.execute("""
+            SELECT DISTINCT
+                p.Passenger_ID,
+                p.Title,
+                p.First_Name,
+                p.Last_Name,
+                p.Gender,
+                p.Nationality,
+                TO_CHAR(p.Date_Of_Birth, 'YYYY-MM-DD') AS Date_Of_Birth,
+                p.Passport_Num,
+                p.Linked_User_ID,
+                CASE WHEN p.Linked_User_ID IS NOT NULL THEN 1 ELSE 0 END AS Is_Registered
+            FROM Passenger p
+            JOIN Reservation r ON p.Passenger_ID = r.Passenger_ID
+            JOIN Booking b ON r.Booking_ID = b.Booking_ID
+            WHERE b.Lead_User_ID = :user_id
+              AND (p.Linked_User_ID IS NULL OR p.Linked_User_ID != :user_id)
+            ORDER BY p.First_Name, p.Last_Name
+        """, user_id=user_id)
+        
+        passengers_raw = cursor.fetchall()
+        
+        if not passengers_raw:
+            return jsonify([])
+        
+        # Build response with trip history for each passenger
+        passengers = []
+        for pax in passengers_raw:
+            passenger_id = pax[0]
+            
+            # Get recent trips for this passenger (booked by this lead user)
+            cursor.execute("""
+                SELECT 
+                    b.Booking_ID,
+                    r.Reservation_ID,
+                    fi.Instance_ID,
+                    fr.Source_Airport,
+                    fr.Dest_Airport,
+                    dep_apt.Airport_Name AS From_Airport,
+                    arr_apt.Airport_Name AS To_Airport,
+                    TO_CHAR(fi.Departure_Time, 'YYYY-MM-DD"T"HH24:MI:SS') AS Departure_Time,
+                    TO_CHAR(fi.Arrival_Time, 'YYYY-MM-DD"T"HH24:MI:SS') AS Arrival_Time,
+                    r.Row_Number,
+                    r.Seat_Letter,
+                    r.Ticket_Status,
+                    r.Price_Charged,
+                    r.Passenger_Type
+                FROM Reservation r
+                JOIN Booking b ON r.Booking_ID = b.Booking_ID
+                JOIN Flight_Instance fi ON r.Instance_ID = fi.Instance_ID
+                JOIN Flight_Route fr ON fi.Route_ID = fr.Route_ID
+                JOIN Airport dep_apt ON fr.Source_Airport = dep_apt.Airport_ID
+                JOIN Airport arr_apt ON fr.Dest_Airport = arr_apt.Airport_ID
+                WHERE r.Passenger_ID = :passenger_id
+                  AND b.Lead_User_ID = :user_id
+                ORDER BY fi.Departure_Time DESC
+                FETCH FIRST 5 ROWS ONLY
+            """, passenger_id=passenger_id, user_id=user_id)
+            
+            trips_raw = cursor.fetchall()
+            
+            recent_trips = []
+            for trip in trips_raw:
+                seat_number = None
+                if trip[9] and trip[10]:
+                    seat_number = f"{trip[9]}{trip[10]}"
+                elif trip[13] == 'LAP_INFANT':
+                    seat_number = "Lap (No Seat)"
+                
+                recent_trips.append({
+                    'bookingId': trip[0],
+                    'reservationId': trip[1],
+                    'flightNumber': trip[2],  # Instance_ID as flight number
+                    'fromCity': trip[3],      # Airport code
+                    'toCity': trip[4],        # Airport code
+                    'fromAirport': trip[5],   # Full airport name
+                    'toAirport': trip[6],     # Full airport name
+                    'departureTime': trip[7],
+                    'arrivalTime': trip[8],
+                    'rowNumber': trip[9],
+                    'seatLetter': trip[10],
+                    'seatNumber': seat_number,
+                    'ticketStatus': trip[11],
+                    'priceCharged': float(trip[12]) if trip[12] else 0,
+                    'passengerType': trip[13]
+                })
+            
+            passengers.append({
+                'passengerId': pax[0],
+                'title': pax[1],
+                'firstName': pax[2],
+                'lastName': pax[3],
+                'gender': pax[4],
+                'nationality': pax[5],
+                'dateOfBirth': pax[6],
+                'passportNum': pax[7] or '',
+                'linkedUserId': pax[8],
+                'isRegisteredUser': bool(pax[9]),
+                'recentTrips': recent_trips
+            })
+        
+        return jsonify(passengers)
+        
+    except Exception as e:
+        print(f"Error fetching past passengers: {e}")
+        return jsonify({'error': 'Failed to fetch past passengers'}), 500
+        
+    finally:
+        cursor.close()
+        conn.close()
+
+
 @app.route('/select-return-flight/<flight_id>')
 def select_return_flight(flight_id):
     session['selected_return_flight'] = flight_id
@@ -1064,6 +1323,11 @@ def passenger_info():
             
             # Collect passenger data
             for i in range(passenger_count):
+                # Check for "is_self" flag (user clicked "Add Myself")
+                is_self = request.form.get(f'is_self_{i}') == 'true'
+                # Check for existing passenger ID (from "Add from Past Bookings" or "Add Myself" with existing profile)
+                existing_passenger_id = request.form.get(f'existing_passenger_id_{i}')
+                
                 passenger_data.append({
                     'first_name': request.form.get(f'first_name_{i}'),
                     'last_name': request.form.get(f'last_name_{i}'),
@@ -1071,8 +1335,12 @@ def passenger_info():
                     'gender': request.form.get(f'gender_{i}'),
                     'passport_number': request.form.get(f'passport_number_{i}', ''),
                     'nationality': request.form.get(f'nationality_{i}', 'US'),
-                    'title': request.form.get(f'title_{i}', 'MR')
+                    'title': request.form.get(f'title_{i}', 'MR'),
+                    'is_self': is_self,  # True if user clicked "Add Myself"
+                    'existing_passenger_id': int(existing_passenger_id) if existing_passenger_id else None
                 })
+                
+                print(f"DEBUG - Passenger {i}: is_self={is_self}, existing_id={existing_passenger_id}")
             
             # Validate all passenger data
             for i, passenger in enumerate(passenger_data):
@@ -1296,24 +1564,63 @@ def process_booking():
             booking_id = booking_result[0]
             print(f"DEBUG - Generated Booking ID: {booking_id}")
             
-            # Insert passengers - for guest users, Linked_User_ID will be NULL
+            # =================================================================
+            # Insert passengers with proper is_self and existing_passenger_id handling
+            # =================================================================
             passenger_ids = []
             for i, passenger in enumerate(passenger_data):
                 print(f"DEBUG - Processing passenger {i}: {passenger['first_name']} {passenger['last_name']} (Title: {passenger['title']})")
                 
-                if lead_user_id and i == 0:
-                    # For logged-in users, check if they already have a linked passenger profile
+                # Get the flags from passenger data
+                is_self = passenger.get('is_self', False)
+                existing_passenger_id = passenger.get('existing_passenger_id')
+                is_infant = passenger.get('title') == 'INF'
+                
+                print(f"DEBUG - is_self={is_self}, existing_id={existing_passenger_id}, is_infant={is_infant}")
+                
+                # CASE 1: Reuse existing passenger (from "Add from Past Bookings" or "Add Myself" with existing profile)
+                if existing_passenger_id:
+                    passenger_id = existing_passenger_id
+                    print(f"DEBUG - Reusing existing passenger ID: {passenger_id}")
+                    
+                    # Update passenger details in case they changed
+                    cursor.execute("""
+                        UPDATE Passenger SET
+                            First_Name = :first_name,
+                            Last_Name = :last_name,
+                            Date_Of_Birth = TO_DATE(:dob, 'YYYY-MM-DD'),
+                            Gender = :gender,
+                            Nationality = :nationality,
+                            Passport_Num = :passport,
+                            Title = :title
+                        WHERE Passenger_ID = :pid
+                    """,
+                    first_name=passenger['first_name'],
+                    last_name=passenger['last_name'],
+                    dob=passenger['date_of_birth'],
+                    gender=passenger['gender'],
+                    nationality=passenger['nationality'],
+                    passport=passenger['passport_number'],
+                    title=passenger['title'],
+                    pid=passenger_id)
+                    
+                    passenger_ids.append(passenger_id)
+                    
+                # CASE 2: User clicked "Add Myself" but doesn't have existing profile
+                # AND the passenger is NOT an infant (infants should never be linked to users)
+                elif is_self and lead_user_id and not is_infant:
+                    # Check if user already has a linked passenger profile
                     cursor.execute("""
                         SELECT Passenger_ID FROM Passenger WHERE Linked_User_ID = :user_id
                     """, user_id=lead_user_id)
-                    existing_passenger = cursor.fetchone()
+                    existing_linked = cursor.fetchone()
                     
-                    if existing_passenger:
-                        # Reuse existing passenger profile
-                        passenger_id = existing_passenger[0]
-                        print(f"DEBUG - Reusing existing passenger profile (ID: {passenger_id}) for user {lead_user_id}")
+                    if existing_linked:
+                        # User already has a profile - reuse it
+                        passenger_id = existing_linked[0]
+                        print(f"DEBUG - Found existing linked profile for user {lead_user_id}: {passenger_id}")
                         
-                        # Optionally update passenger details if changed
+                        # Update the profile with current details
                         cursor.execute("""
                             UPDATE Passenger SET
                                 First_Name = :first_name,
@@ -1336,7 +1643,7 @@ def process_booking():
                         
                         passenger_ids.append(passenger_id)
                     else:
-                        # No existing profile - create new one linked to user
+                        # Create new profile linked to user
                         print(f"DEBUG - Creating NEW passenger profile linked to user {lead_user_id}")
                         cursor.execute("""
                             INSERT INTO Passenger 
@@ -1356,9 +1663,11 @@ def process_booking():
                         cursor.execute("SELECT Passenger_ID FROM Passenger WHERE Linked_User_ID = :user_id", user_id=lead_user_id)
                         passenger_result = cursor.fetchone()
                         passenger_ids.append(passenger_result[0])
-                        print(f"DEBUG - Created passenger ID: {passenger_result[0]}")
+                        print(f"DEBUG - Created linked passenger ID: {passenger_result[0]}")
+                        
+                # CASE 3: Guest passenger, additional passenger, or infant
+                # These should NEVER have Linked_User_ID set
                 else:
-                    # For guest users or additional passengers, Linked_User_ID is NULL
                     print(f"DEBUG - Creating guest/additional passenger: {passenger['first_name']} {passenger['last_name']}")
                     cursor.execute("""
                         INSERT INTO Passenger 
@@ -1373,7 +1682,7 @@ def process_booking():
                     passport=passenger['passport_number'],
                     title=passenger['title'])
                     
-                    # Get the generated passenger ID using sequence's last value
+                    # Get the generated passenger ID
                     cursor.execute("""
                         SELECT Passenger_ID FROM Passenger 
                         WHERE First_Name = :first_name 
@@ -1389,7 +1698,9 @@ def process_booking():
                     passenger_ids.append(passenger_result[0])
                     print(f"DEBUG - Created guest passenger ID: {passenger_result[0]}")
             
+            # =================================================================
             # Create reservations for outbound flight
+            # =================================================================
             # Track seat index for passengers needing seats (adults + seated infants)
             seat_index = 0
             actual_outbound_seats = [s for s in selected_outbound_seats if s != 'INFANT']

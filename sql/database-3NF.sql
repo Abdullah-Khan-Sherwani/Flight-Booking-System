@@ -619,3 +619,148 @@ FROM Booking b
 JOIN Reservation r ON b.Booking_ID = r.Booking_ID
 JOIN Flight_Instance fi ON r.Instance_ID = fi.Instance_ID
 GROUP BY b.Booking_ID, b.Contact_Email, fi.Instance_ID;
+
+--------------------------------------------------------------------------------
+-- 8. PAST PASSENGERS VIEW (Read-Only)
+-- Returns passengers previously booked by a lead user with trip history.
+-- Used by "Add from past bookings" feature.
+-- 
+-- IMPORTANT: When querying this view, the application should filter:
+--   WHERE Lead_User_ID = :current_user_id
+--     AND (Linked_User_ID IS NULL OR Linked_User_ID != :current_user_id)
+-- 
+-- This ensures:
+-- 1. Only passengers the current user has booked appear
+-- 2. The user's OWN passenger profile (Linked_User_ID = user) is excluded
+--    (Use "Add Myself" button instead)
+--------------------------------------------------------------------------------
+CREATE OR REPLACE VIEW View_Past_Passengers AS
+SELECT 
+    -- Passenger details
+    p.Passenger_ID,
+    p.Linked_User_ID,
+    p.Title,
+    p.First_Name,
+    p.Last_Name,
+    p.Gender,
+    p.Nationality,
+    p.Date_Of_Birth,
+    p.Passport_Num,
+    CASE WHEN p.Linked_User_ID IS NOT NULL THEN 'Y' ELSE 'N' END AS Is_Registered_User,
+    
+    -- Booking context (who booked this passenger)
+    b.Lead_User_ID,
+    b.Booking_ID,
+    b.Booking_Date,
+    
+    -- Reservation details
+    r.Reservation_ID,
+    r.Row_Number,
+    r.Seat_Letter,
+    r.Price_Charged,
+    r.Ticket_Status,
+    r.Passenger_Type,
+    
+    -- Flight details
+    fi.Instance_ID,
+    fi.Departure_Time,
+    fi.Arrival_Time,
+    
+    -- Route info (airport codes)
+    fr.Source_Airport,
+    fr.Dest_Airport,
+    
+    -- Airport names for display
+    dep_apt.Airport_Name AS Departure_Airport_Name,
+    arr_apt.Airport_Name AS Arrival_Airport_Name
+    
+FROM Passenger p
+JOIN Reservation r ON p.Passenger_ID = r.Passenger_ID
+JOIN Booking b ON r.Booking_ID = b.Booking_ID
+JOIN Flight_Instance fi ON r.Instance_ID = fi.Instance_ID
+JOIN Flight_Route fr ON fi.Route_ID = fr.Route_ID
+JOIN Airport dep_apt ON fr.Source_Airport = dep_apt.Airport_ID
+JOIN Airport arr_apt ON fr.Dest_Airport = arr_apt.Airport_ID
+WHERE b.Lead_User_ID IS NOT NULL;  -- Only bookings by logged-in users
+
+--------------------------------------------------------------------------------
+-- 9. ACCOUNT DELETION PROCEDURE (Cascading Delete)
+-- Deletes an App_User and all related data in the correct order.
+-- 
+-- This procedure performs a COMPLETE CASCADING DELETE:
+-- 1. Payments for user's bookings
+-- 2. Cancellation logs for user's bookings
+-- 3. Reservations for user's bookings
+-- 4. User's Bookings (as Lead_User)
+-- 5. User's Passenger profile (if exists)
+-- 6. The App_User account itself
+--
+-- IMPORTANT: This is IRREVERSIBLE. All booking history is permanently lost.
+--------------------------------------------------------------------------------
+CREATE OR REPLACE PROCEDURE USP_Delete_User_Account (
+    p_User_ID IN NUMBER,
+    p_Rows_Deleted OUT NUMBER
+) AS
+    v_Passenger_ID NUMBER;
+    v_Total_Deleted NUMBER := 0;
+    v_Count NUMBER;
+BEGIN
+    -- 0. Verify user exists
+    SELECT COUNT(*) INTO v_Count FROM App_User WHERE User_ID = p_User_ID;
+    IF v_Count = 0 THEN
+        RAISE_APPLICATION_ERROR(-20100, 'User account not found');
+    END IF;
+    
+    -- 1. Delete Payments for all bookings made by this user
+    DELETE FROM Payment 
+    WHERE Booking_ID IN (SELECT Booking_ID FROM Booking WHERE Lead_User_ID = p_User_ID);
+    v_Total_Deleted := v_Total_Deleted + SQL%ROWCOUNT;
+    
+    -- 2. Delete Cancellation_Log entries for user's bookings
+    DELETE FROM Cancellation_Log 
+    WHERE Booking_ID IN (SELECT Booking_ID FROM Booking WHERE Lead_User_ID = p_User_ID);
+    v_Total_Deleted := v_Total_Deleted + SQL%ROWCOUNT;
+    
+    -- 3. Delete all Reservations for user's bookings
+    DELETE FROM Reservation 
+    WHERE Booking_ID IN (SELECT Booking_ID FROM Booking WHERE Lead_User_ID = p_User_ID);
+    v_Total_Deleted := v_Total_Deleted + SQL%ROWCOUNT;
+    
+    -- 4. Delete all Bookings made by this user
+    DELETE FROM Booking WHERE Lead_User_ID = p_User_ID;
+    v_Total_Deleted := v_Total_Deleted + SQL%ROWCOUNT;
+    
+    -- 5. Get and delete user's Passenger profile (if linked)
+    BEGIN
+        SELECT Passenger_ID INTO v_Passenger_ID 
+        FROM Passenger 
+        WHERE Linked_User_ID = p_User_ID;
+        
+        -- Delete any orphaned reservations for this passenger 
+        -- (reservations made by OTHER users for this passenger)
+        DELETE FROM Reservation WHERE Passenger_ID = v_Passenger_ID;
+        v_Total_Deleted := v_Total_Deleted + SQL%ROWCOUNT;
+        
+        -- Delete the passenger profile
+        DELETE FROM Passenger WHERE Passenger_ID = v_Passenger_ID;
+        v_Total_Deleted := v_Total_Deleted + SQL%ROWCOUNT;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            NULL; -- User has no passenger profile, that's OK
+    END;
+    
+    -- 6. Finally, delete the App_User account
+    DELETE FROM App_User WHERE User_ID = p_User_ID;
+    v_Total_Deleted := v_Total_Deleted + SQL%ROWCOUNT;
+    
+    -- Return total rows deleted
+    p_Rows_Deleted := v_Total_Deleted;
+    
+    COMMIT;
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+        RAISE;
+END;
+/
+
