@@ -224,6 +224,13 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
+@app.route('/my-trips')
+def my_trips():
+    """Display user's travel history page"""
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    return render_template('my_trips.html')
+
 @app.route('/account-info')
 def account_info():
     """Display account information page"""
@@ -1017,6 +1024,112 @@ def get_seat_status(flight_id):
 
 
 # =============================================================================
+# API: Member Lookup by User ID and Date of Birth
+# =============================================================================
+@app.route('/api/member-lookup', methods=['POST'])
+def api_member_lookup():
+    """
+    Look up a registered user's passenger profile by User ID and Date of Birth.
+    This allows autofilling passenger details for a booking.
+    
+    Input JSON: { "userId": 123, "dateOfBirth": "2004-12-04" }
+    
+    Returns:
+    - 200 with passenger data if found and DOB matches
+    - 404 if no user/passenger found or DOB doesn't match
+    - 400 if invalid input
+    """
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({'error': 'Invalid request. JSON body required.'}), 400
+    
+    user_id = data.get('userId')
+    date_of_birth = data.get('dateOfBirth')
+    
+    # Validate user_id
+    if not user_id:
+        return jsonify({'error': 'User ID is required.'}), 400
+    
+    try:
+        user_id = int(user_id)
+    except (ValueError, TypeError):
+        return jsonify({'error': 'User ID must be a valid number.'}), 400
+    
+    # Validate date_of_birth format
+    if not date_of_birth:
+        return jsonify({'error': 'Date of Birth is required.'}), 400
+    
+    try:
+        # Validate date format (YYYY-MM-DD)
+        from datetime import datetime
+        datetime.strptime(date_of_birth, '%Y-%m-%d')
+    except ValueError:
+        return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD.'}), 400
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # First check if the App_User exists
+        cursor.execute("""
+            SELECT User_ID, Email FROM App_User WHERE User_ID = :user_id
+        """, user_id=user_id)
+        
+        app_user = cursor.fetchone()
+        
+        if not app_user:
+            return jsonify({'error': 'No member found with this User ID.'}), 404
+        
+        # Look up passenger profile linked to this user
+        cursor.execute("""
+            SELECT 
+                p.Passenger_ID,
+                p.Title,
+                p.First_Name,
+                p.Last_Name,
+                p.Gender,
+                p.Nationality,
+                TO_CHAR(p.Date_Of_Birth, 'YYYY-MM-DD') AS Date_Of_Birth,
+                p.Passport_Num
+            FROM Passenger p
+            WHERE p.Linked_User_ID = :user_id
+        """, user_id=user_id)
+        
+        passenger = cursor.fetchone()
+        
+        if not passenger:
+            return jsonify({'error': 'No passenger profile found for this User ID.'}), 404
+        
+        # Verify date of birth matches (security check)
+        stored_dob = passenger[6]  # Date_Of_Birth from query
+        if stored_dob != date_of_birth:
+            return jsonify({'error': 'User ID or Date of Birth does not match. Please verify your details.'}), 404
+        
+        # Success - return passenger details
+        return jsonify({
+            'success': True,
+            'passengerId': passenger[0],
+            'title': passenger[1],
+            'firstName': passenger[2],
+            'lastName': passenger[3],
+            'gender': passenger[4],
+            'nationality': passenger[5],
+            'dateOfBirth': passenger[6],
+            'passportNum': passenger[7],
+            'message': f'Member found: {passenger[2]} {passenger[3]}'
+        })
+        
+    except Exception as e:
+        print(f"Error in member lookup: {e}")
+        return jsonify({'error': 'An error occurred while looking up the member.'}), 500
+        
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# =============================================================================
 # API: Get My Profile (For "Add Myself" feature)
 # =============================================================================
 @app.route('/api/my-profile')
@@ -1218,6 +1331,575 @@ def api_past_passengers():
     except Exception as e:
         print(f"Error fetching past passengers: {e}")
         return jsonify({'error': 'Failed to fetch past passengers'}), 500
+        
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# =============================================================================
+# API: Family Management Endpoints
+# =============================================================================
+
+@app.route('/api/family/invite', methods=['POST'])
+def api_family_invite():
+    """
+    Send a family invitation to another registered user.
+    Input: { "familyEmail": "user@example.com", "relationship": "SPOUSE" }
+    """
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'Unauthorized. Please log in.'}), 401
+    
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Invalid request body'}), 400
+    
+    family_email = data.get('familyEmail', '').strip().lower()
+    relationship = data.get('relationship', '').strip().upper()
+    
+    if not family_email:
+        return jsonify({'error': 'Family member email is required'}), 400
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Look up the family user by email
+        cursor.execute("""
+            SELECT User_ID, Email FROM App_User WHERE LOWER(Email) = :email
+        """, email=family_email)
+        
+        family_user = cursor.fetchone()
+        
+        if not family_user:
+            return jsonify({'error': 'No user found with that email address'}), 404
+        
+        family_user_id = family_user[0]
+        
+        # Cannot add yourself as family
+        if family_user_id == user_id:
+            return jsonify({'error': 'You cannot add yourself as a family member'}), 400
+        
+        # Check if relationship already exists
+        cursor.execute("""
+            SELECT Status FROM User_Family 
+            WHERE User_ID = :user_id AND Family_User_ID = :family_id
+        """, user_id=user_id, family_id=family_user_id)
+        
+        existing = cursor.fetchone()
+        
+        if existing:
+            if existing[0] == 'ACCEPTED':
+                return jsonify({'error': 'This user is already in your family'}), 400
+            elif existing[0] == 'PENDING':
+                return jsonify({'error': 'A pending invitation already exists for this user'}), 400
+            elif existing[0] == 'REJECTED':
+                # Update rejected to pending (re-invite)
+                cursor.execute("""
+                    UPDATE User_Family 
+                    SET Status = 'PENDING', 
+                        Relationship = :relationship,
+                        Created_At = SYSTIMESTAMP
+                    WHERE User_ID = :user_id AND Family_User_ID = :family_id
+                """, user_id=user_id, family_id=family_user_id, 
+                    relationship=relationship if relationship else None)
+                conn.commit()
+                return jsonify({
+                    'success': True, 
+                    'message': 'Family invitation re-sent successfully'
+                })
+        
+        # Check if the other user already sent us an invitation
+        cursor.execute("""
+            SELECT Status FROM User_Family 
+            WHERE User_ID = :family_id AND Family_User_ID = :user_id
+        """, user_id=user_id, family_id=family_user_id)
+        
+        reverse_existing = cursor.fetchone()
+        
+        if reverse_existing and reverse_existing[0] == 'PENDING':
+            return jsonify({
+                'error': 'This user has already sent you a family request. Check your pending requests.',
+                'hasPendingRequest': True
+            }), 400
+        
+        # Insert new invitation
+        cursor.execute("""
+            INSERT INTO User_Family (User_ID, Family_User_ID, Relationship, Status, Created_At)
+            VALUES (:user_id, :family_id, :relationship, 'PENDING', SYSTIMESTAMP)
+        """, user_id=user_id, family_id=family_user_id, 
+            relationship=relationship if relationship else None)
+        
+        conn.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Family invitation sent to {family_email}'
+        })
+        
+    except Exception as e:
+        conn.rollback()
+        print(f"Error sending family invite: {e}")
+        return jsonify({'error': 'Failed to send invitation'}), 500
+        
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/api/family/respond', methods=['POST'])
+def api_family_respond():
+    """
+    Accept or reject a family invitation.
+    Input: { "requestingUserId": 123, "action": "ACCEPT" } or "REJECT"
+    """
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'Unauthorized. Please log in.'}), 401
+    
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Invalid request body'}), 400
+    
+    requesting_user_id = data.get('requestingUserId')
+    action = data.get('action', '').upper()
+    
+    if not requesting_user_id:
+        return jsonify({'error': 'Requesting user ID is required'}), 400
+    
+    if action not in ['ACCEPT', 'REJECT']:
+        return jsonify({'error': 'Action must be ACCEPT or REJECT'}), 400
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Verify a pending request exists from requesting_user_id to current user
+        cursor.execute("""
+            SELECT Status, Relationship FROM User_Family 
+            WHERE User_ID = :requesting_id AND Family_User_ID = :user_id
+        """, requesting_id=requesting_user_id, user_id=user_id)
+        
+        request_row = cursor.fetchone()
+        
+        if not request_row:
+            return jsonify({'error': 'No family request found from this user'}), 404
+        
+        if request_row[0] != 'PENDING':
+            return jsonify({'error': f'This request has already been {request_row[0].lower()}'}), 400
+        
+        relationship = request_row[1]
+        
+        if action == 'REJECT':
+            # Update status to rejected
+            cursor.execute("""
+                UPDATE User_Family 
+                SET Status = 'REJECTED'
+                WHERE User_ID = :requesting_id AND Family_User_ID = :user_id
+            """, requesting_id=requesting_user_id, user_id=user_id)
+            conn.commit()
+            return jsonify({'success': True, 'message': 'Family request rejected'})
+        
+        # ACCEPT: Update the original row and insert reciprocal
+        cursor.execute("""
+            UPDATE User_Family 
+            SET Status = 'ACCEPTED'
+            WHERE User_ID = :requesting_id AND Family_User_ID = :user_id
+        """, requesting_id=requesting_user_id, user_id=user_id)
+        
+        # Check if reciprocal row already exists
+        cursor.execute("""
+            SELECT 1 FROM User_Family 
+            WHERE User_ID = :user_id AND Family_User_ID = :requesting_id
+        """, user_id=user_id, requesting_id=requesting_user_id)
+        
+        if not cursor.fetchone():
+            # Insert reciprocal relationship
+            cursor.execute("""
+                INSERT INTO User_Family (User_ID, Family_User_ID, Relationship, Status, Created_At)
+                VALUES (:user_id, :requesting_id, :relationship, 'ACCEPTED', SYSTIMESTAMP)
+            """, user_id=user_id, requesting_id=requesting_user_id, relationship=relationship)
+        else:
+            # Update existing reciprocal row to accepted
+            cursor.execute("""
+                UPDATE User_Family 
+                SET Status = 'ACCEPTED', Relationship = :relationship
+                WHERE User_ID = :user_id AND Family_User_ID = :requesting_id
+            """, user_id=user_id, requesting_id=requesting_user_id, relationship=relationship)
+        
+        conn.commit()
+        return jsonify({'success': True, 'message': 'Family request accepted!'})
+        
+    except Exception as e:
+        conn.rollback()
+        print(f"Error responding to family request: {e}")
+        return jsonify({'error': 'Failed to respond to request'}), 500
+        
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/api/family')
+def api_family_list():
+    """
+    Get all accepted family members for the logged-in user.
+    Also includes their passenger profile info if available.
+    """
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'Unauthorized. Please log in.'}), 401
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Get accepted family members with their App_User info and Passenger profile
+        cursor.execute("""
+            SELECT 
+                uf.Family_User_ID,
+                au.Email,
+                uf.Relationship,
+                uf.Created_At,
+                p.Passenger_ID,
+                p.Title,
+                p.First_Name,
+                p.Last_Name,
+                p.Gender,
+                p.Nationality,
+                TO_CHAR(p.Date_Of_Birth, 'YYYY-MM-DD') AS Date_Of_Birth,
+                p.Passport_Num
+            FROM User_Family uf
+            JOIN App_User au ON uf.Family_User_ID = au.User_ID
+            LEFT JOIN Passenger p ON p.Linked_User_ID = uf.Family_User_ID
+            WHERE uf.User_ID = :user_id
+              AND uf.Status = 'ACCEPTED'
+            ORDER BY p.First_Name, p.Last_Name, au.Email
+        """, user_id=user_id)
+        
+        family_raw = cursor.fetchall()
+        
+        family_members = []
+        for member in family_raw:
+            has_profile = member[4] is not None
+            
+            family_members.append({
+                'userId': member[0],
+                'email': member[1],
+                'relationship': member[2],
+                'addedAt': member[3].strftime('%Y-%m-%d') if member[3] else None,
+                'hasPassengerProfile': has_profile,
+                'passengerId': member[4],
+                'passenger': {
+                    'title': member[5],
+                    'firstName': member[6],
+                    'lastName': member[7],
+                    'gender': member[8],
+                    'nationality': member[9],
+                    'dateOfBirth': member[10],
+                    'passportNum': member[11]
+                } if has_profile else None
+            })
+        
+        return jsonify(family_members)
+        
+    except Exception as e:
+        print(f"Error fetching family list: {e}")
+        return jsonify({'error': 'Failed to fetch family members'}), 500
+        
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/api/family/pending')
+def api_family_pending():
+    """
+    Get pending family requests for the logged-in user.
+    Returns both incoming (requests from others) and outgoing (requests sent).
+    """
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'Unauthorized. Please log in.'}), 401
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Get incoming pending requests (others inviting current user)
+        cursor.execute("""
+            SELECT 
+                uf.User_ID AS requesting_user_id,
+                au.Email,
+                uf.Relationship,
+                uf.Created_At,
+                p.First_Name,
+                p.Last_Name
+            FROM User_Family uf
+            JOIN App_User au ON uf.User_ID = au.User_ID
+            LEFT JOIN Passenger p ON p.Linked_User_ID = uf.User_ID
+            WHERE uf.Family_User_ID = :user_id
+              AND uf.Status = 'PENDING'
+            ORDER BY uf.Created_At DESC
+        """, user_id=user_id)
+        
+        incoming_raw = cursor.fetchall()
+        
+        incoming = []
+        for req in incoming_raw:
+            name = f"{req[4]} {req[5]}" if req[4] and req[5] else req[1].split('@')[0]
+            incoming.append({
+                'requestingUserId': req[0],
+                'email': req[1],
+                'name': name,
+                'relationship': req[2],
+                'createdAt': req[3].strftime('%Y-%m-%d %H:%M') if req[3] else None
+            })
+        
+        # Get outgoing pending requests (current user inviting others)
+        cursor.execute("""
+            SELECT 
+                uf.Family_User_ID,
+                au.Email,
+                uf.Relationship,
+                uf.Created_At,
+                p.First_Name,
+                p.Last_Name
+            FROM User_Family uf
+            JOIN App_User au ON uf.Family_User_ID = au.User_ID
+            LEFT JOIN Passenger p ON p.Linked_User_ID = uf.Family_User_ID
+            WHERE uf.User_ID = :user_id
+              AND uf.Status = 'PENDING'
+            ORDER BY uf.Created_At DESC
+        """, user_id=user_id)
+        
+        outgoing_raw = cursor.fetchall()
+        
+        outgoing = []
+        for req in outgoing_raw:
+            name = f"{req[4]} {req[5]}" if req[4] and req[5] else req[1].split('@')[0]
+            outgoing.append({
+                'invitedUserId': req[0],
+                'email': req[1],
+                'name': name,
+                'relationship': req[2],
+                'createdAt': req[3].strftime('%Y-%m-%d %H:%M') if req[3] else None
+            })
+        
+        return jsonify({
+            'incoming': incoming,
+            'outgoing': outgoing
+        })
+        
+    except Exception as e:
+        print(f"Error fetching pending requests: {e}")
+        return jsonify({'error': 'Failed to fetch pending requests'}), 500
+        
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/api/family/remove', methods=['POST'])
+def api_family_remove():
+    """
+    Remove a family member (both directions of the relationship).
+    Input: { "familyUserId": 123 }
+    """
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'Unauthorized. Please log in.'}), 401
+    
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Invalid request body'}), 400
+    
+    family_user_id = data.get('familyUserId')
+    
+    if not family_user_id:
+        return jsonify({'error': 'Family user ID is required'}), 400
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Delete both directions of the relationship
+        cursor.execute("""
+            DELETE FROM User_Family 
+            WHERE (User_ID = :user_id AND Family_User_ID = :family_id)
+               OR (User_ID = :family_id AND Family_User_ID = :user_id)
+        """, user_id=user_id, family_id=family_user_id)
+        
+        rows_deleted = cursor.rowcount
+        conn.commit()
+        
+        if rows_deleted == 0:
+            return jsonify({'error': 'No family relationship found'}), 404
+        
+        return jsonify({
+            'success': True,
+            'message': 'Family member removed successfully'
+        })
+        
+    except Exception as e:
+        conn.rollback()
+        print(f"Error removing family member: {e}")
+        return jsonify({'error': 'Failed to remove family member'}), 500
+        
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# =============================================================================
+# API: Booking History (My Trips) with Family-aware Classification
+# =============================================================================
+
+@app.route('/api/bookings/history')
+def api_booking_history():
+    """
+    Get booking history for the logged-in user.
+    Returns all trips where this user was a passenger (based on Passenger.Linked_User_ID).
+    Includes family-aware 'bookedBy' classification:
+    - SELF: user was the lead user (Lead_User_ID = current user)
+    - FAMILY: lead user is an accepted family member
+    - OTHER: some other user made the booking
+    """
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'Unauthorized. Please log in.'}), 401
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # First, find the user's passenger profile
+        cursor.execute("""
+            SELECT Passenger_ID FROM Passenger WHERE Linked_User_ID = :user_id
+        """, user_id=user_id)
+        
+        pax_row = cursor.fetchone()
+        
+        if not pax_row:
+            # User has no passenger profile, return empty list
+            return jsonify([])
+        
+        passenger_id = pax_row[0]
+        
+        # Get all reservations for this passenger
+        cursor.execute("""
+            SELECT 
+                r.Reservation_ID,
+                r.Booking_ID,
+                b.Booking_Date,
+                b.Lead_User_ID,
+                b.Booking_Status,
+                r.Instance_ID,
+                fi.Departure_Time,
+                fi.Arrival_Time,
+                fi.Flight_Status,
+                fr.Source_Airport,
+                fr.Dest_Airport,
+                dep_apt.Airport_Name AS Dep_Airport_Name,
+                arr_apt.Airport_Name AS Arr_Airport_Name,
+                dep_city.City_Name AS From_City,
+                arr_city.City_Name AS To_City,
+                r.Row_Number,
+                r.Seat_Letter,
+                r.Price_Charged,
+                r.Ticket_Status,
+                r.Passenger_Type,
+                lead_user.Email AS Lead_Email,
+                lead_pax.First_Name AS Lead_First_Name,
+                lead_pax.Last_Name AS Lead_Last_Name
+            FROM Reservation r
+            JOIN Booking b ON r.Booking_ID = b.Booking_ID
+            JOIN Flight_Instance fi ON r.Instance_ID = fi.Instance_ID
+            JOIN Flight_Route fr ON fi.Route_ID = fr.Route_ID
+            JOIN Airport dep_apt ON fr.Source_Airport = dep_apt.Airport_ID
+            JOIN Airport arr_apt ON fr.Dest_Airport = arr_apt.Airport_ID
+            JOIN Zip_Master dep_zip ON dep_apt.Zipcode = dep_zip.Zipcode
+            JOIN Zip_Master arr_zip ON arr_apt.Zipcode = arr_zip.Zipcode
+            JOIN City dep_city ON dep_zip.City_ID = dep_city.City_ID
+            JOIN City arr_city ON arr_zip.City_ID = arr_city.City_ID
+            LEFT JOIN App_User lead_user ON b.Lead_User_ID = lead_user.User_ID
+            LEFT JOIN Passenger lead_pax ON lead_pax.Linked_User_ID = b.Lead_User_ID
+            WHERE r.Passenger_ID = :passenger_id
+            ORDER BY fi.Departure_Time DESC
+        """, passenger_id=passenger_id)
+        
+        reservations_raw = cursor.fetchall()
+        
+        # Get all accepted family user IDs for quick lookup
+        cursor.execute("""
+            SELECT Family_User_ID FROM User_Family
+            WHERE User_ID = :user_id AND Status = 'ACCEPTED'
+        """, user_id=user_id)
+        
+        family_ids = {row[0] for row in cursor.fetchall()}
+        
+        # Build the response
+        history = []
+        for res in reservations_raw:
+            lead_user_id = res[3]
+            
+            # Determine bookedBy classification
+            if lead_user_id == user_id:
+                booked_by = 'SELF'
+                lead_user_info = None
+            elif lead_user_id in family_ids:
+                booked_by = 'FAMILY'
+                lead_name = f"{res[21]} {res[22]}" if res[21] and res[22] else res[20].split('@')[0] if res[20] else 'Unknown'
+                lead_user_info = {
+                    'userId': lead_user_id,
+                    'email': res[20],
+                    'name': lead_name
+                }
+            else:
+                booked_by = 'OTHER'
+                lead_user_info = {
+                    'userId': lead_user_id,
+                    'email': res[20] if res[20] else None
+                } if lead_user_id else None
+            
+            # Format seat
+            seat = None
+            if res[15] and res[16]:
+                seat = f"{res[15]}{res[16]}"
+            elif res[19] == 'LAP_INFANT':
+                seat = "Lap (No Seat)"
+            
+            history.append({
+                'reservationId': res[0],
+                'bookingId': res[1],
+                'bookingDate': res[2].strftime('%Y-%m-%d') if res[2] else None,
+                'bookingStatus': res[4],
+                'flightNumber': res[5],  # Instance_ID
+                'departureTime': res[6].strftime('%Y-%m-%dT%H:%M:%S') if res[6] else None,
+                'arrivalTime': res[7].strftime('%Y-%m-%dT%H:%M:%S') if res[7] else None,
+                'flightStatus': res[8],
+                'fromAirportCode': res[9],
+                'toAirportCode': res[10],
+                'fromAirport': res[11],
+                'toAirport': res[12],
+                'fromCity': res[13],
+                'toCity': res[14],
+                'rowNumber': res[15],
+                'seatLetter': res[16],
+                'seat': seat,
+                'priceCharged': float(res[17]) if res[17] else 0,
+                'ticketStatus': res[18],
+                'passengerType': res[19],
+                'bookedBy': booked_by,
+                'leadUser': lead_user_info
+            })
+        
+        return jsonify(history)
+        
+    except Exception as e:
+        print(f"Error fetching booking history: {e}")
+        return jsonify({'error': 'Failed to fetch booking history'}), 500
         
     finally:
         cursor.close()

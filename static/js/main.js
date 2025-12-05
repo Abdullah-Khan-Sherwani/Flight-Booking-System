@@ -272,7 +272,10 @@
 
 
 	var dateForm = function() {
-		$('#date-start').datepicker();
+		// Only initialize datepicker if element exists and plugin is available
+		if ($('#date-start').length && typeof $.fn.datepicker !== 'undefined') {
+			$('#date-start').datepicker();
+		}
 	};
 
 	var parallax = function() {

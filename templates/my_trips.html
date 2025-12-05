@@ -1,0 +1,587 @@
+<!DOCTYPE HTML>
+<html>
+	<head>
+	<meta charset="utf-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<title>My Trips - IAT Airlines</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="description" content="Your travel history and upcoming trips" />
+
+	<link href="https://fonts.googleapis.com/css?family=Lato:300,400,700" rel="stylesheet">
+	
+	<!-- Animate.css -->
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/animate.css') }}">
+	<!-- Icomoon Icon Fonts-->
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/icomoon.css') }}">
+	<!-- Themify Icons-->
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/themify-icons.css') }}">
+	<!-- Bootstrap  -->
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.css') }}">
+	<!-- Magnific Popup -->
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/magnific-popup.css') }}">
+	<!-- Owl Carousel  -->
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/owl.carousel.min.css') }}">
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/owl.theme.default.min.css') }}">
+	<!-- Theme style  -->
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+	<!-- Font Awesome -->
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+	<!-- Modernizr JS -->
+	<script src="{{ url_for('static', filename='js/modernizr-2.6.2.min.js') }}"></script>
+
+	<style>
+        body {
+            background-image: url("{{ url_for('static', filename='images/img_bg_2.jpg') }}");
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+            position: relative;
+        }
+        
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 0;
+            pointer-events: none;
+        }
+        
+        #page {
+            position: relative;
+            z-index: 1;
+        }
+        
+        /* Ensure nav and dropdowns are above the overlay */
+        .gtco-nav {
+            position: relative;
+            z-index: 1000;
+        }
+
+        #gtco-logo a {
+            color: white !important;
+        }
+
+        .trips-container {
+            padding: 50px 0;
+            min-height: 100vh;
+        }
+        
+        .trips-card {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            padding: 30px;
+            margin-bottom: 30px;
+        }
+        
+        .trip-item {
+            border: 1px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            transition: all 0.3s ease;
+        }
+        
+        .trip-item:hover {
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            border-color: #007bff;
+        }
+        
+        .trip-item.upcoming {
+            border-left: 4px solid #28a745;
+        }
+        
+        .trip-item.past {
+            border-left: 4px solid #6c757d;
+        }
+        
+        .trip-item.cancelled {
+            border-left: 4px solid #dc3545;
+            opacity: 0.8;
+        }
+        
+        .route-display {
+            font-size: 1.2em;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .route-arrow {
+            color: #007bff;
+            margin: 0 10px;
+        }
+        
+        .flight-datetime {
+            color: #666;
+            font-size: 0.9em;
+        }
+        
+        .booked-by-badge {
+            font-size: 0.8em;
+            padding: 5px 10px;
+            border-radius: 15px;
+        }
+        
+        .booked-by-self {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        
+        .booked-by-family {
+            background-color: #cce5ff;
+            color: #004085;
+        }
+        
+        .booked-by-other {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        
+        .trip-details {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #eee;
+        }
+        
+        .detail-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+        
+        .detail-label {
+            color: #666;
+            font-weight: 500;
+        }
+        
+        .detail-value {
+            color: #333;
+        }
+        
+        .trips-header {
+            padding: 80px 0 40px 0;
+            color: white;
+            text-align: center;
+            position: relative;
+            z-index: 2;
+        }
+
+        .trips-header h1 {
+            font-size: 3em;
+            margin-bottom: 10px;
+            font-weight: 700;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            color: white !important;
+        }
+        
+        .filter-tabs {
+            margin-bottom: 25px;
+        }
+        
+        .filter-tabs .btn {
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .filter-tabs .btn.active {
+            background-color: #007bff;
+            color: white;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+        }
+        
+        .empty-state i {
+            font-size: 4em;
+            color: #ccc;
+            margin-bottom: 20px;
+        }
+        
+        /* Bootstrap 4 utility class for Bootstrap 3 */
+        .d-none {
+            display: none !important;
+        }
+        
+        .col-xs-8.text-right.menu-1 {
+            position: relative;
+            right: -100px;
+            top: 0;
+        }
+        
+        /* Fix dropdown visibility - needed because of body::before overlay */
+        .gtco-nav ul li.has-dropdown .dropdown {
+            visibility: visible;
+            opacity: 1;
+            display: none;
+        }
+        
+        .gtco-nav ul li.has-dropdown:hover .dropdown {
+            display: block;
+        }
+        
+        .lead-user-info {
+            margin-top: 10px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            font-size: 0.9em;
+        }
+        
+        .status-badge {
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.75em;
+            font-weight: 600;
+        }
+        
+        .status-issued { background: #cce5ff; color: #004085; }
+        .status-checked_in { background: #d1ecf1; color: #0c5460; }
+        .status-boarded { background: #d4edda; color: #155724; }
+        .status-cancelled { background: #f8d7da; color: #721c24; }
+        .status-no_show { background: #fff3cd; color: #856404; }
+        
+        /* Hide loader - main.js may error on pages without datepicker */
+        .gtco-loader {
+            display: none !important;
+        }
+    </style>
+	</head>
+	<body>
+		
+	<div class="gtco-loader"></div>
+	
+	<div id="page">
+
+	<nav class="gtco-nav" role="navigation">
+		<div class="gtco-container">
+			<div class="row">
+				<div class="col-sm-4 col-xs-12">
+					<div id="gtco-logo"><a href="{{ url_for('dashboard') }}">IAT Airlines <em>.</em></a></div>
+				</div>
+				<div class="col-xs-8 text-right menu-1">
+					<ul>
+						<li><a href="{{ url_for('manage_bookings') }}">Manage Bookings</a></li>
+						<li class="has-dropdown">
+							<a href="#">Book Travel</a>
+							<ul class="dropdown">
+								<li><a href="#">One Way</a></li>
+								<li><a href="#">Round Trip</a></li>
+								<li><a href="#">Multi City</a></li>
+							</ul>
+						</li>
+						<li><a href="{{ url_for('pricing') }}">Fares</a></li>
+						<li><a href="{{ url_for('contact') }}">Contact</a></li>
+						
+						{% if session.user_first_name %}
+						<li class="has-dropdown">
+							<a href="#">
+								<div style="display: inline-flex; align-items: center;">
+									<div style="width: 32px; height: 32px; background: linear-gradient(135deg, #2c3e50, #3498db); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 14px; margin-right: 8px;">
+										{{ session.user_first_name[0]|upper }}
+									</div>
+									{{ session.user_first_name }}
+								</div>
+							</a>
+							<ul class="dropdown">
+								<li><a href="{{ url_for('account_info') }}">Account</a></li>
+								<li class="active"><a href="{{ url_for('my_trips') }}">My Trips</a></li>
+								<li><a href="{{ url_for('manage_bookings') }}">My Bookings</a></li>
+								<li><a href="{{ url_for('logout') }}">Logout</a></li>
+							</ul>
+						</li>
+						{% elif session.is_guest %}
+						<li class="has-dropdown">
+							<a href="#">
+								<div style="display: inline-flex; align-items: center;">
+									<div style="width: 32px; height: 32px; background: #6c757d; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 14px; margin-right: 8px;">
+										G
+									</div>
+									Guest
+								</div>
+							</a>
+							<ul class="dropdown">
+								<li><a href="{{ url_for('login') }}">Sign In</a></li>
+								<li><a href="{{ url_for('signup') }}">Create Account</a></li>
+							</ul>
+						</li>
+						{% else %}
+						<li><a href="{{ url_for('login') }}">Login</a></li>
+						<li><a href="{{ url_for('signup') }}">Sign Up</a></li>
+						{% endif %}
+					</ul>	
+				</div>
+			</div>
+		</div>
+	</nav>
+	
+	<header id="gtco-header" class="trips-header">
+		<div class="gtco-container">
+			<div class="row">
+				<div class="col-md-12 text-center">
+					<h1>My Trips</h1>
+					<p class="text-white">View your travel history and upcoming flights</p>
+				</div>
+			</div>
+		</div>
+	</header>
+
+	<div class="trips-container">
+		<div class="gtco-container">
+			<div class="row">
+				<div class="col-md-12">
+					<div class="trips-card">
+						<!-- Filter Tabs -->
+						<div class="filter-tabs">
+							<button class="btn btn-outline-primary active" onclick="filterTrips('all')" id="filter-all">
+								<i class="fas fa-list"></i> All Trips
+							</button>
+							<button class="btn btn-outline-success" onclick="filterTrips('upcoming')" id="filter-upcoming">
+								<i class="fas fa-plane-departure"></i> Upcoming
+							</button>
+							<button class="btn btn-outline-secondary" onclick="filterTrips('past')" id="filter-past">
+								<i class="fas fa-history"></i> Past
+							</button>
+							<button class="btn btn-outline-info" onclick="filterTrips('family')" id="filter-family">
+								<i class="fas fa-users"></i> Booked by Family
+							</button>
+						</div>
+						
+						<!-- Loading State -->
+						<div id="tripsLoading" class="text-center" style="padding: 50px 0;">
+							<i class="fas fa-spinner fa-spin fa-3x text-primary"></i>
+							<p class="mt-3 text-muted" style="margin-top: 15px;">Loading your trips...</p>
+						</div>
+						
+						<!-- Empty State -->
+						<div id="tripsEmpty" class="empty-state" style="display: none;">
+							<i class="fas fa-plane-slash"></i>
+							<h4>No trips found</h4>
+							<p class="text-muted">You haven't taken any trips yet, or no trips match your filter.</p>
+							<a href="{{ url_for('index') }}" class="btn btn-primary mt-3">
+								<i class="fas fa-search"></i> Search Flights
+							</a>
+						</div>
+						
+						<!-- Trips List -->
+						<div id="tripsList" style="display: none;">
+							<!-- Trips will be populated here by JavaScript -->
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+	
+	<footer id="gtco-footer" role="contentinfo" style="background: transparent;">
+		<div class="gtco-container">
+			<div class="row row-pb-md">
+				<div class="col-md-12 text-center">
+					<div class="gtco-widget">
+						<p class="text-white">© 2024 IAT Airlines. All Rights Reserved.</p>
+					</div>
+				</div>
+			</div>
+		</div>
+	</footer>
+	
+	</div>
+
+	<script src="{{ url_for('static', filename='js/jquery.min.js') }}"></script>
+	<script src="{{ url_for('static', filename='js/bootstrap.min.js') }}"></script>
+	<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+	
+	<script>
+		let allTrips = [];
+		let currentFilter = 'all';
+		
+		document.addEventListener('DOMContentLoaded', function() {
+			loadTrips();
+		});
+		
+		async function loadTrips() {
+			const loadingEl = document.getElementById('tripsLoading');
+			const emptyEl = document.getElementById('tripsEmpty');
+			const listEl = document.getElementById('tripsList');
+			
+			try {
+				const response = await fetch('/api/bookings/history');
+				
+				if (!response.ok) {
+					if (response.status === 401) {
+						window.location.href = '/login';
+						return;
+					}
+					throw new Error('Failed to load trips');
+				}
+				
+				const data = await response.json();
+				
+				loadingEl.style.display = 'none';
+				
+				if (data.error) {
+					throw new Error(data.error);
+				}
+				
+				allTrips = data;
+				
+				if (!data || data.length === 0) {
+					emptyEl.style.display = 'block';
+					return;
+				}
+				
+				renderTrips(data);
+				listEl.style.display = 'block';
+				
+			} catch (error) {
+				console.error('Error loading trips:', error);
+				loadingEl.style.display = 'none';
+				emptyEl.style.display = 'block';
+			}
+		}
+		
+		function renderTrips(trips) {
+			const listEl = document.getElementById('tripsList');
+			listEl.innerHTML = '';
+			
+			if (trips.length === 0) {
+				document.getElementById('tripsEmpty').style.display = 'block';
+				listEl.style.display = 'none';
+				return;
+			}
+			
+			document.getElementById('tripsEmpty').style.display = 'none';
+			listEl.style.display = 'block';
+			
+			trips.forEach(trip => {
+				const tripEl = createTripElement(trip);
+				listEl.appendChild(tripEl);
+			});
+		}
+		
+		function createTripElement(trip) {
+			const now = new Date();
+			const depTime = new Date(trip.departureTime);
+			const isUpcoming = depTime > now && trip.ticketStatus !== 'CANCELLED';
+			const isCancelled = trip.ticketStatus === 'CANCELLED' || trip.bookingStatus === 'CANCELLED';
+			
+			let tripClass = 'trip-item';
+			if (isCancelled) {
+				tripClass += ' cancelled';
+			} else if (isUpcoming) {
+				tripClass += ' upcoming';
+			} else {
+				tripClass += ' past';
+			}
+			
+			// Format dates
+			const depDate = depTime.toLocaleDateString('en-US', { 
+				weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' 
+			});
+			const depTimeStr = depTime.toLocaleTimeString('en-US', { 
+				hour: '2-digit', minute: '2-digit' 
+			});
+			
+			const arrTime = new Date(trip.arrivalTime);
+			const arrTimeStr = arrTime.toLocaleTimeString('en-US', { 
+				hour: '2-digit', minute: '2-digit' 
+			});
+			
+			// Booked by badge
+			let bookedByBadge = '';
+			let leadUserInfo = '';
+			
+			if (trip.bookedBy === 'SELF') {
+				bookedByBadge = '<span class="booked-by-badge booked-by-self"><i class="fas fa-user"></i> Booked by you</span>';
+			} else if (trip.bookedBy === 'FAMILY') {
+				bookedByBadge = '<span class="booked-by-badge booked-by-family"><i class="fas fa-users"></i> Booked by family</span>';
+				if (trip.leadUser) {
+					leadUserInfo = `
+						<div class="lead-user-info">
+							<i class="fas fa-user-friends text-primary"></i> 
+							<strong>Booked by:</strong> ${trip.leadUser.name || trip.leadUser.email}
+						</div>
+					`;
+				}
+			} else {
+				bookedByBadge = '<span class="booked-by-badge booked-by-other"><i class="fas fa-user-circle"></i> Booked by another user</span>';
+			}
+			
+			// Status badge
+			const statusClass = `status-${trip.ticketStatus.toLowerCase()}`;
+			const statusBadge = `<span class="status-badge ${statusClass}">${trip.ticketStatus}</span>`;
+			
+			const div = document.createElement('div');
+			div.className = tripClass;
+			div.dataset.bookedBy = trip.bookedBy;
+			div.dataset.isUpcoming = isUpcoming;
+			div.dataset.isPast = !isUpcoming && !isCancelled;
+			div.innerHTML = `
+				<div class="row">
+					<div class="col-md-8">
+						<div class="route-display">
+							${trip.fromCity} 
+							<span class="route-arrow"><i class="fas fa-plane"></i></span> 
+							${trip.toCity}
+						</div>
+						<div class="flight-datetime">
+							<i class="far fa-calendar-alt"></i> ${depDate} &nbsp;|&nbsp; 
+							<i class="far fa-clock"></i> ${depTimeStr} - ${arrTimeStr}
+						</div>
+						<div class="mt-2">
+							${bookedByBadge}
+							${statusBadge}
+						</div>
+						${leadUserInfo}
+					</div>
+					<div class="col-md-4 text-md-end">
+						<div class="trip-details-right">
+							<div><strong>Booking:</strong> ${trip.bookingId}</div>
+							<div><strong>Ticket:</strong> ${trip.reservationId}</div>
+							<div><strong>Seat:</strong> ${trip.seat || 'Not assigned'}</div>
+							<div><strong>Price:</strong> $${trip.priceCharged.toFixed(2)}</div>
+						</div>
+					</div>
+				</div>
+			`;
+			
+			return div;
+		}
+		
+		function filterTrips(filter) {
+			currentFilter = filter;
+			
+			// Update active button
+			document.querySelectorAll('.filter-tabs .btn').forEach(btn => {
+				btn.classList.remove('active');
+			});
+			document.getElementById(`filter-${filter}`).classList.add('active');
+			
+			// Filter trips
+			let filteredTrips = allTrips;
+			const now = new Date();
+			
+			if (filter === 'upcoming') {
+				filteredTrips = allTrips.filter(trip => {
+					const depTime = new Date(trip.departureTime);
+					return depTime > now && trip.ticketStatus !== 'CANCELLED';
+				});
+			} else if (filter === 'past') {
+				filteredTrips = allTrips.filter(trip => {
+					const depTime = new Date(trip.departureTime);
+					return depTime <= now || trip.ticketStatus === 'CANCELLED';
+				});
+			} else if (filter === 'family') {
+				filteredTrips = allTrips.filter(trip => trip.bookedBy === 'FAMILY');
+			}
+			
+			renderTrips(filteredTrips);
+		}
+	</script>
+	</body>
+</html>

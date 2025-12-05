@@ -684,7 +684,39 @@ JOIN Airport arr_apt ON fr.Dest_Airport = arr_apt.Airport_ID
 WHERE b.Lead_User_ID IS NOT NULL;  -- Only bookings by logged-in users
 
 --------------------------------------------------------------------------------
--- 9. ACCOUNT DELETION PROCEDURE (Cascading Delete)
+-- 9. FAMILY RELATIONSHIP TABLE
+-- Enables users to add other registered users as family members.
+-- 
+-- KEY DESIGN DECISIONS (3NF Compliant):
+-- - Only stores User IDs and relationship metadata
+-- - NO duplication of user names, emails, or other App_User attributes
+-- - Composite PK: (User_ID, Family_User_ID) 
+-- - All non-key attributes are fully functionally dependent on the key
+-- - Symmetric relationships: when accepted, two rows are inserted
+--   (A → B and B → A) for efficient querying
+--------------------------------------------------------------------------------
+CREATE TABLE User_Family (
+    User_ID        NUMBER NOT NULL,
+    Family_User_ID NUMBER NOT NULL,
+    Relationship   VARCHAR2(30),   -- e.g., 'SPOUSE', 'CHILD', 'PARENT', 'SIBLING', 'OTHER'
+    Status         VARCHAR2(20) DEFAULT 'PENDING' NOT NULL
+                   CHECK (Status IN ('PENDING', 'ACCEPTED', 'REJECTED')),
+    Created_At     TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
+    
+    CONSTRAINT PK_User_Family PRIMARY KEY (User_ID, Family_User_ID),
+    CONSTRAINT FK_User_Family_User 
+        FOREIGN KEY (User_ID) REFERENCES App_User(User_ID) ON DELETE CASCADE,
+    CONSTRAINT FK_User_Family_Family_User 
+        FOREIGN KEY (Family_User_ID) REFERENCES App_User(User_ID) ON DELETE CASCADE,
+    CONSTRAINT CK_User_Family_No_Self 
+        CHECK (User_ID != Family_User_ID)
+);
+
+-- Index for efficient lookup of family requests for a user
+CREATE INDEX IDX_User_Family_Family_User ON User_Family(Family_User_ID, Status);
+
+--------------------------------------------------------------------------------
+-- 10. ACCOUNT DELETION PROCEDURE (Cascading Delete)
 -- Deletes an App_User and all related data in the correct order.
 -- 
 -- This procedure performs a COMPLETE CASCADING DELETE:
@@ -692,8 +724,9 @@ WHERE b.Lead_User_ID IS NOT NULL;  -- Only bookings by logged-in users
 -- 2. Cancellation logs for user's bookings
 -- 3. Reservations for user's bookings
 -- 4. User's Bookings (as Lead_User)
--- 5. User's Passenger profile (if exists)
--- 6. The App_User account itself
+-- 5. User's Family relationships
+-- 6. User's Passenger profile (if exists)
+-- 7. The App_User account itself
 --
 -- IMPORTANT: This is IRREVERSIBLE. All booking history is permanently lost.
 --------------------------------------------------------------------------------
@@ -730,7 +763,11 @@ BEGIN
     DELETE FROM Booking WHERE Lead_User_ID = p_User_ID;
     v_Total_Deleted := v_Total_Deleted + SQL%ROWCOUNT;
     
-    -- 5. Get and delete user's Passenger profile (if linked)
+    -- 5. Delete all family relationships (both directions)
+    DELETE FROM User_Family WHERE User_ID = p_User_ID OR Family_User_ID = p_User_ID;
+    v_Total_Deleted := v_Total_Deleted + SQL%ROWCOUNT;
+    
+    -- 6. Get and delete user's Passenger profile (if linked)
     BEGIN
         SELECT Passenger_ID INTO v_Passenger_ID 
         FROM Passenger 
@@ -749,7 +786,7 @@ BEGIN
             NULL; -- User has no passenger profile, that's OK
     END;
     
-    -- 6. Finally, delete the App_User account
+    -- 7. Finally, delete the App_User account
     DELETE FROM App_User WHERE User_ID = p_User_ID;
     v_Total_Deleted := v_Total_Deleted + SQL%ROWCOUNT;
     

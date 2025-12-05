@@ -50,12 +50,19 @@
             right: 0;
             bottom: 0;
             background: rgba(0, 0, 0, 0.5);
-            z-index: -1;
+            z-index: 0;
+            pointer-events: none;
         }
         
         #page {
             position: relative;
             z-index: 1;
+        }
+        
+        /* Ensure nav and dropdowns are above the overlay */
+        .gtco-nav {
+            position: relative;
+            z-index: 1000;
         }
 
         #gtco-logo a {
@@ -184,6 +191,17 @@
             right: -100px;
             top: 0;
         }
+        
+        /* Fix dropdown visibility - needed because of body::before overlay */
+        .gtco-nav ul li.has-dropdown .dropdown {
+            visibility: visible;
+            opacity: 1;
+            display: none;
+        }
+        
+        .gtco-nav ul li.has-dropdown:hover .dropdown {
+            display: block;
+        }
 
         /* Fix modal z-index and positioning */
         .modal {
@@ -204,6 +222,11 @@
         }
         .modal.in .modal-dialog {
             pointer-events: auto;
+        }
+        
+        /* Hide loader - main.js may error on pages without datepicker */
+        .gtco-loader {
+            display: none !important;
         }
 
     </style>
@@ -250,7 +273,8 @@
 								</div>
 							</a>
 							<ul class="dropdown">
-								<li><a href="{{ url_for('account_info') }}">Account</a></li>
+								<li class="active"><a href="{{ url_for('account_info') }}">Account</a></li>
+								<li><a href="{{ url_for('my_trips') }}">My Trips</a></li>
 								<li><a href="{{ url_for('manage_bookings') }}">My Bookings</a></li>
 								<li><a href="{{ url_for('logout') }}">Logout</a></li>
 							</ul>
@@ -352,7 +376,74 @@
 
 						<div class="text-center" style="margin-top: 30px;">
 							<a href="{{ url_for('dashboard') }}" class="btn btn-primary">Back to Dashboard</a>
-							<a href="{{ url_for('manage_bookings') }}" class="btn btn-default">View My Bookings</a>
+							<a href="{{ url_for('my_trips') }}" class="btn btn-info">My Trips</a>
+							<a href="{{ url_for('manage_bookings') }}" class="btn btn-default">Manage Bookings</a>
+						</div>
+
+						<!-- Family Members Section -->
+						<div class="info-section" style="margin-top: 40px; border-top: 2px solid #28a745; padding-top: 30px;">
+							<h4 style="color: #28a745;"><i class="ti-user" style="margin-right: 8px;"></i>Family Members</h4>
+							<p class="text-muted" style="margin-bottom: 20px;">
+								Add family members to quickly book flights together. Family members can also book flights on your behalf.
+							</p>
+							
+							<!-- Add Family Member Form -->
+							<div class="panel panel-default" style="margin-bottom: 20px;">
+								<div class="panel-heading">
+									<h5 class="panel-title"><i class="ti-plus" style="margin-right: 6px;"></i>Add Family Member</h5>
+								</div>
+								<div class="panel-body">
+									<form id="addFamilyForm" onsubmit="sendFamilyInvite(event)">
+										<div class="row">
+											<div class="col-md-5">
+												<input type="email" id="familyEmail" class="form-control" 
+													   placeholder="Family member's email" required>
+											</div>
+											<div class="col-md-4">
+												<select id="familyRelationship" class="form-control">
+													<option value="">Select relationship...</option>
+													<option value="SPOUSE">Spouse</option>
+													<option value="PARENT">Parent</option>
+													<option value="CHILD">Child</option>
+													<option value="SIBLING">Sibling</option>
+													<option value="GRANDPARENT">Grandparent</option>
+													<option value="OTHER">Other</option>
+												</select>
+											</div>
+											<div class="col-md-3">
+												<button type="submit" class="btn btn-success btn-block" id="inviteBtn">
+													<i class="ti-plus"></i> Invite
+												</button>
+											</div>
+										</div>
+									</form>
+								</div>
+							</div>
+							
+							<!-- Pending Requests -->
+							<div id="pendingRequestsSection" style="display: none; margin-bottom: 20px; padding: 15px; background-color: #fff8e6; border: 2px solid #f0ad4e; border-radius: 8px;">
+								<h5 style="margin-top: 0;"><i class="ti-bell" style="margin-right: 6px; color: #f0ad4e;"></i>Pending Requests</h5>
+								
+								<!-- Incoming Requests -->
+								<div id="incomingRequests" style="display: none;">
+									<p class="text-muted small"><strong>People who want to add you as family:</strong></p>
+									<div id="incomingRequestsList"></div>
+								</div>
+								
+								<!-- Outgoing Requests -->
+								<div id="outgoingRequests" style="display: none; margin-top: 15px;">
+									<p class="text-muted small"><strong>Your sent invitations:</strong></p>
+									<div id="outgoingRequestsList"></div>
+								</div>
+							</div>
+							
+							<!-- Family Members List -->
+							<div id="familyMembersList">
+								<h5><i class="ti-users" style="margin-right: 6px;"></i>Your Family</h5>
+								<div id="familyMembersContent">
+									<p class="text-muted">Loading family members...</p>
+								</div>
+							</div>
 						</div>
 
 						<!-- Danger Zone: Delete Account -->
@@ -523,6 +614,262 @@
 			toastMsg.text(message);
 			toast.fadeIn(300);
 			setTimeout(function() { toast.fadeOut(300); }, 4000);
+		}
+
+		// =====================================================
+		// Family Management Functions
+		// =====================================================
+		
+		// Use setTimeout to ensure this runs after any errors in main.js
+		setTimeout(function() {
+			if (typeof $ !== 'undefined') {
+				loadFamilyData();
+			} else {
+				// Fallback if jQuery isn't available
+				document.addEventListener('DOMContentLoaded', loadFamilyData);
+			}
+		}, 100);
+		
+		async function loadFamilyData() {
+			// Load both independently so one failing doesn't block the other
+			loadFamilyMembers();
+			loadPendingRequests();
+		}
+		
+		async function loadFamilyMembers() {
+			try {
+				console.log('Loading family members...');
+				const response = await fetch('/api/family');
+				console.log('Family response status:', response.status);
+				if (!response.ok) throw new Error('Failed to load');
+				
+				const members = await response.json();
+				console.log('Family members data:', members);
+				
+				if (members.error) throw new Error(members.error);
+				
+				const container = document.getElementById('familyMembersContent');
+				
+				if (!members || members.length === 0) {
+					container.innerHTML = `
+						<div class="alert alert-info">
+							<i class="ti-info-alt" style="margin-right: 8px;"></i>
+							No family members yet. Invite someone using the form above!
+						</div>
+					`;
+					return;
+				}
+				
+				let html = '<div class="list-group">';
+				members.forEach(member => {
+					const name = member.passenger 
+						? `${member.passenger.firstName} ${member.passenger.lastName}` 
+						: member.email.split('@')[0];
+					const hasProfile = member.hasPassengerProfile;
+					
+					html += `
+						<div class="list-group-item">
+							<div class="row">
+								<div class="col-md-8">
+									<h5 class="list-group-item-heading" style="margin-bottom: 5px;">
+										${name}
+										<span class="label label-info" style="font-size: 11px; margin-left: 8px;">
+											${member.relationship || 'Family'}
+										</span>
+									</h5>
+									<p class="list-group-item-text text-muted" style="margin-bottom: 5px;">
+										<i class="ti-email" style="margin-right: 4px;"></i>${member.email}
+									</p>
+									<span class="label ${hasProfile ? 'label-success' : 'label-warning'}" style="font-size: 10px;">
+										${hasProfile ? 'Profile Complete' : 'No Passenger Profile'}
+									</span>
+								</div>
+								<div class="col-md-4 text-right">
+									<button class="btn btn-sm btn-danger" onclick="removeFamilyMember(${member.userId}, '${name}')">
+										<i class="ti-close"></i> Remove
+									</button>
+								</div>
+							</div>
+						</div>
+					`;
+				});
+				html += '</div>';
+				container.innerHTML = html;
+				
+			} catch (error) {
+				console.error('Error loading family members:', error);
+				document.getElementById('familyMembersContent').innerHTML = `
+					<div class="alert alert-danger">
+						<i class="ti-alert" style="margin-right: 8px;"></i>
+						Failed to load family members. <a href="#" onclick="loadFamilyMembers(); return false;">Retry</a>
+					</div>
+				`;
+			}
+		}
+		
+		async function loadPendingRequests() {
+			try {
+				console.log('Loading pending requests...');
+				const response = await fetch('/api/family/pending');
+				console.log('Response status:', response.status);
+				if (!response.ok) throw new Error('Failed to load');
+				
+				const data = await response.json();
+				console.log('Pending requests data:', data);
+				
+				if (data.error) throw new Error(data.error);
+				
+				const hasIncoming = data.incoming && data.incoming.length > 0;
+				const hasOutgoing = data.outgoing && data.outgoing.length > 0;
+				
+				console.log('Has incoming:', hasIncoming, 'Has outgoing:', hasOutgoing);
+				
+				if (!hasIncoming && !hasOutgoing) {
+					$('#pendingRequestsSection').hide();
+					return;
+				}
+				
+				$('#pendingRequestsSection').show();
+				
+				// Render incoming requests
+				if (hasIncoming) {
+					$('#incomingRequests').show();
+					let html = '';
+					data.incoming.forEach(req => {
+						html += `
+							<div class="alert alert-warning" style="padding: 12px;">
+								<div class="row">
+									<div class="col-md-7">
+										<strong>${req.name}</strong> (${req.email})
+										<br><small>Relationship: ${req.relationship || 'Not specified'} • Sent: ${req.createdAt}</small>
+									</div>
+									<div class="col-md-5 text-right">
+										<button class="btn btn-sm btn-success" onclick="respondToRequest(${req.requestingUserId}, 'ACCEPT')">
+											<i class="ti-check"></i> Accept
+										</button>
+										<button class="btn btn-sm btn-danger" onclick="respondToRequest(${req.requestingUserId}, 'REJECT')">
+											<i class="ti-close"></i> Reject
+										</button>
+									</div>
+								</div>
+							</div>
+						`;
+					});
+					$('#incomingRequestsList').html(html);
+				} else {
+					$('#incomingRequests').hide();
+				}
+				
+				// Render outgoing requests
+				if (hasOutgoing) {
+					$('#outgoingRequests').show();
+					let html = '';
+					data.outgoing.forEach(req => {
+						html += `
+							<div class="alert alert-info" style="padding: 12px;">
+								<strong>${req.name}</strong> (${req.email})
+								<span class="label label-default" style="margin-left: 10px;">Pending</span>
+								<br><small>Relationship: ${req.relationship || 'Not specified'} • Sent: ${req.createdAt}</small>
+							</div>
+						`;
+					});
+					$('#outgoingRequestsList').html(html);
+				} else {
+					$('#outgoingRequests').hide();
+				}
+				
+			} catch (error) {
+				console.error('Error loading pending requests:', error);
+			}
+		}
+		
+		async function sendFamilyInvite(event) {
+			event.preventDefault();
+			
+			const email = document.getElementById('familyEmail').value.trim();
+			const relationship = document.getElementById('familyRelationship').value;
+			
+			if (!email) {
+				showToast('Please enter an email address', 'error');
+				return;
+			}
+			
+			const btn = document.getElementById('inviteBtn');
+			btn.disabled = true;
+			btn.innerHTML = '<i class="ti-reload"></i> Sending...';
+			
+			try {
+				const response = await fetch('/api/family/invite', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ familyEmail: email, relationship: relationship })
+				});
+				
+				const result = await response.json();
+				
+				if (result.success) {
+					showToast(result.message || 'Invitation sent!', 'success');
+					document.getElementById('familyEmail').value = '';
+					document.getElementById('familyRelationship').value = '';
+					await loadPendingRequests();
+				} else {
+					showToast(result.error || 'Failed to send invitation', 'error');
+				}
+			} catch (error) {
+				console.error('Error sending invite:', error);
+				showToast('An error occurred. Please try again.', 'error');
+			} finally {
+				btn.disabled = false;
+				btn.innerHTML = '<i class="ti-plus"></i> Invite';
+			}
+		}
+		
+		async function respondToRequest(requestingUserId, action) {
+			try {
+				const response = await fetch('/api/family/respond', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ requestingUserId: requestingUserId, action: action })
+				});
+				
+				const result = await response.json();
+				
+				if (result.success) {
+					showToast(result.message || `Request ${action.toLowerCase()}ed!`, 'success');
+					await loadFamilyData();
+				} else {
+					showToast(result.error || 'Failed to respond', 'error');
+				}
+			} catch (error) {
+				console.error('Error responding to request:', error);
+				showToast('An error occurred. Please try again.', 'error');
+			}
+		}
+		
+		async function removeFamilyMember(familyUserId, name) {
+			if (!confirm(`Are you sure you want to remove ${name} from your family?`)) {
+				return;
+			}
+			
+			try {
+				const response = await fetch('/api/family/remove', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ familyUserId: familyUserId })
+				});
+				
+				const result = await response.json();
+				
+				if (result.success) {
+					showToast('Family member removed', 'success');
+					await loadFamilyMembers();
+				} else {
+					showToast(result.error || 'Failed to remove', 'error');
+				}
+			} catch (error) {
+				console.error('Error removing family member:', error);
+				showToast('An error occurred. Please try again.', 'error');
+			}
 		}
 	</script>
 

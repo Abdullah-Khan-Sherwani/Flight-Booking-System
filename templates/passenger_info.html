@@ -82,6 +82,55 @@
         .step-label {
             font-size: 14px;
         }
+        /* Member Lookup Modal Styles */
+        .member-lookup-modal .modal-header {
+            background: linear-gradient(135deg, #1a237e 0%, #283593 100%);
+            color: white;
+        }
+        .member-lookup-modal .modal-title {
+            font-weight: 600;
+        }
+        .member-lookup-modal .lookup-description {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+        .member-lookup-modal .form-label {
+            font-weight: 600;
+            color: #333;
+        }
+        .member-lookup-modal .lookup-btn {
+            background: linear-gradient(135deg, #1976d2 0%, #1565c0 100%);
+            border: none;
+            padding: 10px 30px;
+            font-weight: 600;
+        }
+        .member-lookup-modal .lookup-btn:hover {
+            background: linear-gradient(135deg, #1565c0 0%, #0d47a1 100%);
+        }
+        .member-lookup-btn {
+            background: linear-gradient(135deg, #1a237e 0%, #283593 100%);
+            border: none;
+            color: white;
+            font-size: 12px;
+            padding: 5px 12px;
+        }
+        .member-lookup-btn:hover {
+            background: linear-gradient(135deg, #283593 0%, #3949ab 100%);
+            color: white;
+        }
+        .lookup-result-success {
+            background: #e8f5e9;
+            border: 1px solid #4caf50;
+            border-radius: 8px;
+            padding: 15px;
+        }
+        .lookup-result-error {
+            background: #ffebee;
+            border: 1px solid #f44336;
+            border-radius: 8px;
+            padding: 15px;
+        }
     </style>
 </head>
 <body>
@@ -187,9 +236,14 @@
             <!-- First passenger form will be here by default -->
             <div class="passenger-form-container">
                 <div class="passenger-section">
-                    <div class="passenger-header">
-                        <h5 class="mb-0">Passenger 1</h5>
-                        <small>Enter details exactly as they appear on travel documents</small>
+                    <div class="passenger-header d-flex justify-content-between align-items-start">
+                        <div>
+                            <h5 class="mb-0">Passenger 1</h5>
+                            <small>Enter details exactly as they appear on travel documents</small>
+                        </div>
+                        <button type="button" class="btn btn-sm member-lookup-btn" onclick="openMemberLookupModal(0)">
+                            <i class="fas fa-search"></i> Member Lookup
+                        </button>
                     </div>
                     
                     <!-- Title and Personal Information -->
@@ -271,11 +325,14 @@
             <div class="d-flex align-items-center justify-content-between flex-wrap">
                 <div class="mb-2 mb-md-0">
                     <i class="fas fa-user-circle fa-lg me-2"></i>
-                    <strong>Quick Add:</strong> Add yourself or passengers from your previous bookings
+                    <strong>Quick Add:</strong> Add passengers quickly from saved profiles
                 </div>
-                <div>
-                    <button type="button" class="btn btn-primary me-2" onclick="addMyself()">
+                <div class="d-flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-primary" onclick="addMyself()">
                         <i class="fas fa-user-plus"></i> Add Myself
+                    </button>
+                    <button type="button" class="btn btn-success" onclick="openFamilyModal()">
+                        <i class="fas fa-users"></i> Add from Family
                     </button>
                     <button type="button" class="btn btn-outline-primary" onclick="openPastPassengersModal()">
                         <i class="fas fa-history"></i> From Past Bookings
@@ -325,10 +382,17 @@
         passengerSection.className = 'passenger-form-container';
         passengerSection.innerHTML = `
             <div class="passenger-section">
-                <div class="passenger-header">
-                    <h5 class="mb-0">Passenger ${passengerCount}</h5>
-                    <small>Enter details exactly as they appear on travel documents</small>
-                    <button type="button" class="btn btn-sm btn-danger float-end" onclick="removePassenger(this)">Remove</button>
+                <div class="passenger-header d-flex justify-content-between align-items-start">
+                    <div>
+                        <h5 class="mb-0">Passenger ${passengerCount}</h5>
+                        <small>Enter details exactly as they appear on travel documents</small>
+                    </div>
+                    <div>
+                        <button type="button" class="btn btn-sm member-lookup-btn me-2" onclick="openMemberLookupModal(${passengerCount-1})">
+                            <i class="fas fa-search"></i> Member Lookup
+                        </button>
+                        <button type="button" class="btn btn-sm btn-danger" onclick="removePassenger(this)">Remove</button>
+                    </div>
                 </div>
                 
                 <!-- Title and Personal Information -->
@@ -676,6 +740,142 @@
     });
 </script>
 
+<!-- Member Lookup Modal -->
+<div class="modal fade member-lookup-modal" id="memberLookupModal" tabindex="-1" aria-labelledby="memberLookupModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="memberLookupModalLabel">
+                    <i class="fas fa-search"></i> Member Lookup
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="lookup-description">
+                    Please enter User ID and Date of Birth to lookup member details:
+                </p>
+                
+                <!-- Hidden field to track which passenger form to fill -->
+                <input type="hidden" id="lookupTargetFormIndex" value="0">
+                
+                <div class="mb-3">
+                    <label for="lookupUserId" class="form-label">User ID *</label>
+                    <input type="number" class="form-control" id="lookupUserId" 
+                           placeholder="Enter User ID" min="1" required>
+                    <div class="form-text">The registered member's User ID</div>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="lookupDob" class="form-label">Date of Birth *</label>
+                    <input type="date" class="form-control" id="lookupDob" required>
+                    <div class="form-text">For verification purposes</div>
+                </div>
+                
+                <!-- Result Area -->
+                <div id="lookupResultArea" class="d-none mt-3">
+                    <!-- Success result -->
+                    <div id="lookupSuccess" class="lookup-result-success d-none">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="fas fa-check-circle text-success fa-lg me-2"></i>
+                            <strong class="text-success">Member Found!</strong>
+                        </div>
+                        <p class="mb-0" id="lookupSuccessMessage">Member details loaded.</p>
+                    </div>
+                    
+                    <!-- Error result -->
+                    <div id="lookupError" class="lookup-result-error d-none">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="fas fa-exclamation-circle text-danger fa-lg me-2"></i>
+                            <strong class="text-danger">Not Found</strong>
+                        </div>
+                        <p class="mb-0" id="lookupErrorMessage">No member found with these details.</p>
+                    </div>
+                </div>
+                
+                <!-- Loading State -->
+                <div id="lookupLoading" class="text-center d-none mt-3">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Looking up...</span>
+                    </div>
+                    <p class="mt-2 mb-0 text-muted">Looking up member...</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn lookup-btn" id="lookupBtn" onclick="performMemberLookup()">
+                    <i class="fas fa-search"></i> Lookup
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Family Members Modal -->
+<div class="modal fade" id="familyModal" tabindex="-1" aria-labelledby="familyModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title" id="familyModalLabel">
+                    <i class="fas fa-users"></i> Add from Family
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Loading State -->
+                <div id="familyLoading" class="text-center py-4">
+                    <div class="spinner-border text-success" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2 text-muted">Loading family members...</p>
+                </div>
+                
+                <!-- Error State -->
+                <div id="familyError" class="alert alert-danger d-none">
+                    <i class="fas fa-exclamation-circle"></i> 
+                    <span id="familyErrorMessage">Failed to load family members.</span>
+                </div>
+                
+                <!-- Empty State -->
+                <div id="familyEmpty" class="text-center py-4 d-none">
+                    <i class="fas fa-user-friends fa-3x text-muted mb-3"></i>
+                    <h5>No Family Members Found</h5>
+                    <p class="text-muted">You haven't added any family members yet.</p>
+                    <p class="text-muted small">
+                        Go to your <a href="{{ url_for('account_info') }}">Account Settings</a> to add family members.
+                    </p>
+                </div>
+                
+                <!-- Family List -->
+                <div id="familyList" class="d-none">
+                    <p class="text-muted mb-3">
+                        <i class="fas fa-info-circle"></i> 
+                        Select a family member to auto-fill their passenger details.
+                    </p>
+                    <div class="table-responsive">
+                        <table class="table table-hover" id="familyTable">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Relationship</th>
+                                    <th>Email</th>
+                                    <th>Profile Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="familyTableBody">
+                                <!-- Populated by JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Past Passengers Modal -->
 <div class="modal fade" id="pastPassengersModal" tabindex="-1" aria-labelledby="pastPassengersModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
@@ -771,6 +971,29 @@
 </div>
 
 <style>
+    /* Family Modal Styles */
+    #familyModal .family-row {
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+    #familyModal .family-row:hover {
+        background-color: #d4edda !important;
+    }
+    #familyModal .badge-has-profile {
+        background-color: #28a745;
+    }
+    #familyModal .badge-no-profile {
+        background-color: #ffc107;
+        color: #212529;
+    }
+    #familyModal .btn-use-family {
+        white-space: nowrap;
+    }
+    .relationship-badge {
+        font-size: 0.85em;
+        text-transform: capitalize;
+    }
+    
     /* Past Passengers Modal Styles */
     #pastPassengersModal .passenger-row {
         cursor: pointer;
@@ -798,7 +1021,213 @@
 </style>
 
 <script>
+    // =================================================================
+    // Family Members Feature - Add family members to passenger form
+    // =================================================================
+    let familyMembersData = [];
+    
+    function openFamilyModal() {
+        const modal = new bootstrap.Modal(document.getElementById('familyModal'));
+        modal.show();
+        loadFamilyMembers();
+    }
+    
+    async function loadFamilyMembers() {
+        const loadingEl = document.getElementById('familyLoading');
+        const errorEl = document.getElementById('familyError');
+        const emptyEl = document.getElementById('familyEmpty');
+        const listEl = document.getElementById('familyList');
+        
+        // Reset states
+        loadingEl.classList.remove('d-none');
+        errorEl.classList.add('d-none');
+        emptyEl.classList.add('d-none');
+        listEl.classList.add('d-none');
+        
+        try {
+            const response = await fetch('/api/family');
+            
+            if (!response.ok) {
+                if (response.status === 401) {
+                    throw new Error('Please log in to access family members.');
+                }
+                throw new Error('Failed to load family members.');
+            }
+            
+            const data = await response.json();
+            
+            loadingEl.classList.add('d-none');
+            
+            if (data.error) {
+                throw new Error(data.error);
+            }
+            
+            if (!data || data.length === 0) {
+                emptyEl.classList.remove('d-none');
+                return;
+            }
+            
+            familyMembersData = data;
+            renderFamilyMembers(data);
+            listEl.classList.remove('d-none');
+            
+        } catch (error) {
+            loadingEl.classList.add('d-none');
+            errorEl.classList.remove('d-none');
+            document.getElementById('familyErrorMessage').textContent = error.message;
+        }
+    }
+    
+    function renderFamilyMembers(members) {
+        const tbody = document.getElementById('familyTableBody');
+        tbody.innerHTML = '';
+        
+        members.forEach((member, index) => {
+            const hasProfile = member.hasPassengerProfile && member.passenger;
+            const name = hasProfile 
+                ? `${member.passenger.title || ''} ${member.passenger.firstName} ${member.passenger.lastName}`.trim()
+                : member.email.split('@')[0];
+            
+            const row = document.createElement('tr');
+            row.className = 'family-row';
+            row.innerHTML = `
+                <td>
+                    <strong>${name}</strong>
+                    ${hasProfile && member.passenger.passportNum 
+                        ? `<br><small class="text-muted">Passport: ${member.passenger.passportNum}</small>` 
+                        : ''}
+                </td>
+                <td>
+                    <span class="badge bg-secondary relationship-badge">
+                        ${member.relationship || 'Family'}
+                    </span>
+                </td>
+                <td>
+                    <small>${member.email}</small>
+                </td>
+                <td>
+                    <span class="badge ${hasProfile ? 'badge-has-profile' : 'badge-no-profile'}">
+                        ${hasProfile ? 'Complete' : 'No Profile'}
+                    </span>
+                </td>
+                <td>
+                    ${hasProfile 
+                        ? `<button type="button" class="btn btn-sm btn-success btn-use-family" 
+                                onclick="useFamilyMember(${index})">
+                            <i class="fas fa-check"></i> Use
+                           </button>`
+                        : `<span class="text-muted small">No profile to use</span>`
+                    }
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+    
+    function useFamilyMember(memberIndex) {
+        const member = familyMembersData[memberIndex];
+        if (!member || !member.hasPassengerProfile || !member.passenger) {
+            alert('This family member does not have a passenger profile yet.');
+            return;
+        }
+        
+        // Find an empty passenger form or use the current one
+        const formIndex = findEmptyOrCurrentPassengerForm();
+        
+        if (formIndex === -1) {
+            // All forms are filled, ask to add another
+            if (passengerCount >= 6) {
+                alert('Maximum 6 passengers allowed. Please remove a passenger first.');
+                return;
+            }
+            
+            if (confirm('All passenger forms are filled. Add a new passenger with these details?')) {
+                addPassenger();
+                setTimeout(() => fillFamilyMemberForm(passengerCount - 1, member), 100);
+            }
+            return;
+        }
+        
+        fillFamilyMemberForm(formIndex, member);
+        
+        // Close the modal
+        const modal = bootstrap.Modal.getInstance(document.getElementById('familyModal'));
+        if (modal) modal.hide();
+        
+        showToast(`Added family member: ${member.passenger.firstName} ${member.passenger.lastName}`, 'success');
+    }
+    
+    function fillFamilyMemberForm(formIndex, member) {
+        const pax = member.passenger;
+        
+        // Store the existing passenger ID if available
+        if (member.passengerId) {
+            let hiddenIdField = document.getElementById(`existing_passenger_id_${formIndex}`);
+            if (!hiddenIdField) {
+                hiddenIdField = document.createElement('input');
+                hiddenIdField.type = 'hidden';
+                hiddenIdField.id = `existing_passenger_id_${formIndex}`;
+                hiddenIdField.name = `existing_passenger_id_${formIndex}`;
+                document.getElementById('passengerForm').appendChild(hiddenIdField);
+            }
+            hiddenIdField.value = member.passengerId;
+        }
+        
+        // Title
+        const titleSelect = document.getElementById(`title_${formIndex}`);
+        if (titleSelect && pax.title) titleSelect.value = pax.title;
+        
+        // First Name
+        const firstNameInput = document.getElementById(`first_name_${formIndex}`);
+        if (firstNameInput && pax.firstName) firstNameInput.value = pax.firstName;
+        
+        // Last Name
+        const lastNameInput = document.getElementById(`last_name_${formIndex}`);
+        if (lastNameInput && pax.lastName) lastNameInput.value = pax.lastName;
+        
+        // Date of Birth
+        const dobInput = document.getElementById(`date_of_birth_${formIndex}`);
+        if (dobInput && pax.dateOfBirth) dobInput.value = pax.dateOfBirth;
+        
+        // Gender
+        if (pax.gender) {
+            const genderRadio = document.querySelector(`input[name="gender_${formIndex}"][value="${pax.gender}"]`);
+            if (genderRadio) genderRadio.checked = true;
+        }
+        
+        // Nationality
+        const nationalityInput = document.getElementById(`nationality_${formIndex}`);
+        if (nationalityInput && pax.nationality) nationalityInput.value = pax.nationality;
+        
+        // Passport Number
+        const passportInput = document.getElementById(`passport_number_${formIndex}`);
+        if (passportInput && pax.passportNum) passportInput.value = pax.passportNum;
+        
+        // Add visual indicator
+        highlightFamilyForm(formIndex, member);
+        
+        console.log(`Filled form ${formIndex} with family member (passenger_id=${member.passengerId})`);
+    }
+    
+    function highlightFamilyForm(formIndex, member) {
+        const containers = document.querySelectorAll('.passenger-form-container');
+        if (containers[formIndex]) {
+            const header = containers[formIndex].querySelector('.passenger-header');
+            if (header) {
+                const existingBadge = header.querySelector('.family-badge');
+                if (!existingBadge) {
+                    const badge = document.createElement('span');
+                    badge.className = 'badge bg-info ms-2 family-badge';
+                    badge.innerHTML = `<i class="fas fa-users"></i> ${member.relationship || 'Family'}`;
+                    header.querySelector('h5').appendChild(badge);
+                }
+            }
+        }
+    }
+    
+    // =================================================================
     // Past Passengers Feature
+    // =================================================================
     let pastPassengersData = [];
     let currentPassengerIndex = 0; // Track which passenger form to fill
     
@@ -1044,6 +1473,206 @@
         
         console.log(`Filled passenger form ${formIndex} with passenger ID ${pax.passengerId}`);
     }
+    
+    // =================================================================
+    // Member Lookup Feature - Search by User ID and DOB
+    // =================================================================
+    let memberLookupModal = null;
+    
+    function openMemberLookupModal(formIndex) {
+        // Store which form we're filling
+        document.getElementById('lookupTargetFormIndex').value = formIndex;
+        
+        // Reset the form
+        document.getElementById('lookupUserId').value = '';
+        document.getElementById('lookupDob').value = '';
+        
+        // Hide result areas
+        document.getElementById('lookupResultArea').classList.add('d-none');
+        document.getElementById('lookupSuccess').classList.add('d-none');
+        document.getElementById('lookupError').classList.add('d-none');
+        document.getElementById('lookupLoading').classList.add('d-none');
+        
+        // Initialize modal if not already done
+        if (!memberLookupModal) {
+            memberLookupModal = new bootstrap.Modal(document.getElementById('memberLookupModal'));
+        }
+        
+        memberLookupModal.show();
+        
+        // Focus on user ID field
+        setTimeout(() => {
+            document.getElementById('lookupUserId').focus();
+        }, 300);
+    }
+    
+    async function performMemberLookup() {
+        const userId = document.getElementById('lookupUserId').value.trim();
+        const dob = document.getElementById('lookupDob').value;
+        const formIndex = document.getElementById('lookupTargetFormIndex').value;
+        
+        // Validate inputs
+        if (!userId) {
+            showToast('Please enter a User ID.', 'warning');
+            document.getElementById('lookupUserId').focus();
+            return;
+        }
+        
+        if (!dob) {
+            showToast('Please enter Date of Birth.', 'warning');
+            document.getElementById('lookupDob').focus();
+            return;
+        }
+        
+        // Show loading state
+        document.getElementById('lookupLoading').classList.remove('d-none');
+        document.getElementById('lookupResultArea').classList.add('d-none');
+        document.getElementById('lookupBtn').disabled = true;
+        
+        try {
+            const response = await fetch('/api/member-lookup', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    userId: parseInt(userId),
+                    dateOfBirth: dob
+                })
+            });
+            
+            const data = await response.json();
+            
+            // Hide loading
+            document.getElementById('lookupLoading').classList.add('d-none');
+            document.getElementById('lookupBtn').disabled = false;
+            document.getElementById('lookupResultArea').classList.remove('d-none');
+            
+            if (response.ok && data.success) {
+                // Success - show success message and fill form
+                document.getElementById('lookupSuccess').classList.remove('d-none');
+                document.getElementById('lookupError').classList.add('d-none');
+                document.getElementById('lookupSuccessMessage').textContent = 
+                    `Found: ${data.firstName} ${data.lastName}. Details will be filled automatically.`;
+                
+                // Fill the passenger form after a short delay
+                setTimeout(() => {
+                    fillPassengerFromLookup(formIndex, data);
+                    memberLookupModal.hide();
+                    showToast(`Passenger ${parseInt(formIndex) + 1} details loaded from User ID ${userId}`, 'success');
+                }, 1000);
+                
+            } else {
+                // Error - show error message
+                document.getElementById('lookupSuccess').classList.add('d-none');
+                document.getElementById('lookupError').classList.remove('d-none');
+                document.getElementById('lookupErrorMessage').textContent = 
+                    data.error || 'No member found with these details. Please check and try again.';
+            }
+            
+        } catch (error) {
+            console.error('Member lookup error:', error);
+            
+            // Hide loading and show error
+            document.getElementById('lookupLoading').classList.add('d-none');
+            document.getElementById('lookupBtn').disabled = false;
+            document.getElementById('lookupResultArea').classList.remove('d-none');
+            document.getElementById('lookupSuccess').classList.add('d-none');
+            document.getElementById('lookupError').classList.remove('d-none');
+            document.getElementById('lookupErrorMessage').textContent = 
+                'Something went wrong. Please try again later.';
+        }
+    }
+    
+    function fillPassengerFromLookup(formIndex, memberData) {
+        // Title
+        const titleSelect = document.getElementById(`title_${formIndex}`);
+        if (titleSelect && memberData.title) titleSelect.value = memberData.title;
+        
+        // First Name
+        const firstNameInput = document.getElementById(`first_name_${formIndex}`);
+        if (firstNameInput && memberData.firstName) firstNameInput.value = memberData.firstName;
+        
+        // Last Name
+        const lastNameInput = document.getElementById(`last_name_${formIndex}`);
+        if (lastNameInput && memberData.lastName) lastNameInput.value = memberData.lastName;
+        
+        // Date of Birth
+        const dobInput = document.getElementById(`date_of_birth_${formIndex}`);
+        if (dobInput && memberData.dateOfBirth) dobInput.value = memberData.dateOfBirth;
+        
+        // Gender
+        if (memberData.gender) {
+            const genderRadio = document.querySelector(`input[name="gender_${formIndex}"][value="${memberData.gender}"]`);
+            if (genderRadio) genderRadio.checked = true;
+        }
+        
+        // Nationality
+        const nationalityInput = document.getElementById(`nationality_${formIndex}`);
+        if (nationalityInput && memberData.nationality) nationalityInput.value = memberData.nationality;
+        
+        // Passport Number
+        const passportInput = document.getElementById(`passport_number_${formIndex}`);
+        if (passportInput && memberData.passportNum) passportInput.value = memberData.passportNum;
+        
+        // Store the existing passenger ID for reuse
+        let hiddenIdField = document.getElementById(`existing_passenger_id_${formIndex}`);
+        if (!hiddenIdField) {
+            hiddenIdField = document.createElement('input');
+            hiddenIdField.type = 'hidden';
+            hiddenIdField.id = `existing_passenger_id_${formIndex}`;
+            hiddenIdField.name = `existing_passenger_id_${formIndex}`;
+            document.getElementById('passengerForm').appendChild(hiddenIdField);
+        }
+        hiddenIdField.value = memberData.passengerId;
+        
+        // Add visual indicator
+        highlightLookedUpForm(formIndex, memberData.firstName, memberData.lastName);
+        
+        console.log(`Filled form ${formIndex} from member lookup (passenger_id=${memberData.passengerId})`);
+    }
+    
+    function highlightLookedUpForm(formIndex, firstName, lastName) {
+        const containers = document.querySelectorAll('.passenger-form-container');
+        if (containers[formIndex]) {
+            const header = containers[formIndex].querySelector('.passenger-header h5');
+            if (header) {
+                // Remove any existing badge
+                const existingBadge = header.querySelector('.lookup-badge');
+                if (existingBadge) existingBadge.remove();
+                
+                // Add new badge
+                const badge = document.createElement('span');
+                badge.className = 'badge bg-info ms-2 lookup-badge';
+                badge.innerHTML = `<i class="fas fa-user-check"></i> ${firstName} ${lastName}`;
+                header.appendChild(badge);
+            }
+        }
+    }
+    
+    // Allow Enter key to trigger lookup
+    document.addEventListener('DOMContentLoaded', function() {
+        const lookupDobInput = document.getElementById('lookupDob');
+        const lookupUserIdInput = document.getElementById('lookupUserId');
+        
+        if (lookupDobInput) {
+            lookupDobInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    performMemberLookup();
+                }
+            });
+        }
+        
+        if (lookupUserIdInput) {
+            lookupUserIdInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    document.getElementById('lookupDob').focus();
+                }
+            });
+        }
+    });
     
     function showToast(message, type = 'success') {
         // Create a toast notification with different types
