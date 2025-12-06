@@ -1,0 +1,305 @@
+erDiagram
+    %%====================================================================
+    %% FLIGHT BOOKING SYSTEM - ENTITY RELATIONSHIP DIAGRAM
+    %% Source: database-3NF.sql
+    %% Generated: 2024-12-06
+    %%====================================================================
+
+    %%--------------------------------------------------------------------
+    %% PHASE 1: GEOGRAPHIC & AIRPORT MASTER DATA
+    %% Tables: Country, State_Province, City, Zip_Master, Airport
+    %% Relationship Pattern: Linear hierarchy (1:N chain)
+    %% Verified from app.py:
+    %%   - Airport JOIN Zip_Master ON a.Zipcode = z.Zipcode
+    %%   - Zip_Master JOIN City ON z.City_ID = c.City_ID
+    %%--------------------------------------------------------------------
+
+    Country {
+        NUMBER Country_ID PK "Primary Key"
+        VARCHAR2_50 Country_Name "NOT NULL UNIQUE"
+    }
+
+    State_Province {
+        NUMBER State_ID PK "Primary Key"
+        VARCHAR2_50 State_Name "NOT NULL"
+        NUMBER Country_ID FK "FK to Country"
+    }
+    %% Constraint: UQ_State_Country UNIQUE(State_Name, Country_ID)
+
+    City {
+        NUMBER City_ID PK "Primary Key"
+        VARCHAR2_50 City_Name "NOT NULL"
+        NUMBER State_ID FK "FK to State_Province"
+    }
+    %% Constraint: UQ_City_State UNIQUE(City_Name, State_ID)
+
+    Zip_Master {
+        VARCHAR2_10 Zipcode PK "Primary Key"
+        NUMBER City_ID FK "FK to City NOT NULL"
+    }
+
+    Airport {
+        VARCHAR2_10 Airport_ID PK "IATA Code eg JFK"
+        VARCHAR2_100 Airport_Name "NOT NULL"
+        VARCHAR2_10 Zipcode FK "FK to Zip_Master nullable"
+    }
+
+    %% PHASE 1 RELATIONSHIPS - Geographic Hierarchy
+    %% Pattern: Country -> State -> City -> Zip -> Airport
+    Country ||--o{ State_Province : contains
+    State_Province ||--o{ City : contains
+    City ||--o{ Zip_Master : has
+    Zip_Master ||--o{ Airport : locates
+
+    %%--------------------------------------------------------------------
+    %% PHASE 2: AIRCRAFT & SEAT CONFIGURATION
+    %% Tables: Aircraft_Model, Travel_Class, Aircraft_Row_Class, Aircraft_Seat_Map
+    %% Key: Composite PK (Model_ID, Row_Number) and (Model_ID, Row_Number, Seat_Letter)
+    %% Verified from app.py:
+    %%   - JOIN Aircraft_Row_Class arc ON asm.Model_ID = arc.Model_ID AND asm.Row_Number = arc.Row_Number
+    %%--------------------------------------------------------------------
+
+    Aircraft_Model {
+        VARCHAR2_20 Model_ID PK "eg B737-800"
+        VARCHAR2_100 Model_Name "NOT NULL"
+        VARCHAR2_50 Manufacturer "nullable"
+    }
+
+    Travel_Class {
+        VARCHAR2_10 Class_ID PK "eg ECO BUS FIR"
+        VARCHAR2_50 Class_Name "NOT NULL"
+    }
+
+    Aircraft_Row_Class {
+        VARCHAR2_20 Model_ID PK "Composite PK part 1"
+        NUMBER Row_Number PK "Composite PK part 2"
+        VARCHAR2_10 Class_ID FK "FK to Travel_Class"
+    }
+    %% Constraint: CK_Row_Pos CHECK(Row_Number > 0)
+    %% FK: Model_ID -> Aircraft_Model(Model_ID)
+
+    Aircraft_Seat_Map {
+        VARCHAR2_20 Model_ID PK "Composite PK part 1"
+        NUMBER Row_Number PK "Composite PK part 2"
+        CHAR_1 Seat_Letter PK "Composite PK part 3"
+    }
+    %% Composite FK: (Model_ID, Row_Number) -> Aircraft_Row_Class(Model_ID, Row_Number)
+
+    %%--------------------------------------------------------------------
+    %% PHASE 2: FLIGHT OPERATIONS & PRICING
+    %% Tables: Flight_Route, Route_Pricing, Flight_Instance
+    %% Verified from app.py:
+    %%   - JOIN Flight_Route fr ON fi.Route_ID = fr.Route_ID
+    %%   - SELECT Base_Price FROM Route_Pricing WHERE Route_ID = fr.Route_ID AND Class_ID = ...
+    %%--------------------------------------------------------------------
+
+    Flight_Route {
+        VARCHAR2_10 Route_ID PK "Primary Key"
+        VARCHAR2_10 Source_Airport FK "FK to Airport"
+        VARCHAR2_10 Dest_Airport FK "FK to Airport"
+        NUMBER Base_Duration "Minutes nullable"
+    }
+    %% Constraint: CK_Diff_Airports CHECK(Source_Airport <> Dest_Airport)
+
+    Route_Pricing {
+        NUMBER Pricing_ID PK "Primary Key"
+        VARCHAR2_10 Route_ID FK "FK to Flight_Route"
+        VARCHAR2_10 Class_ID FK "FK to Travel_Class"
+        DATE Valid_From "NOT NULL"
+        DATE Valid_To "NOT NULL"
+        NUMBER_10_2 Base_Price "NOT NULL CHECK >= 0"
+    }
+    %% Constraint: CK_Pricing_Dates CHECK(Valid_To >= Valid_From)
+
+    Flight_Instance {
+        VARCHAR2_20 Instance_ID PK "eg FL101-20241010"
+        VARCHAR2_10 Route_ID FK "FK to Flight_Route"
+        VARCHAR2_20 Model_ID FK "FK to Aircraft_Model"
+        TIMESTAMP Departure_Time "NOT NULL"
+        TIMESTAMP Arrival_Time "NOT NULL"
+        VARCHAR2_20 Flight_Status "DEFAULT SCHEDULED"
+        NUMBER_3_2 Price_Multiplier "DEFAULT 1.00"
+    }
+    %% Constraint: CK_Arrival_After_Dep CHECK(Arrival_Time > Departure_Time)
+    %% Constraint: CK_Price_Multiplier CHECK(Price_Multiplier > 0)
+    %% CHECK: Flight_Status IN (SCHEDULED, DELAYED, CANCELLED, LANDED)
+
+    %%--------------------------------------------------------------------
+    %% PHASE 2: SERVICES & OFFERINGS
+    %% Tables: Flight_Service, Service_Offering
+    %% Service_Offering has 4-column composite PK with temporal validity
+    %%--------------------------------------------------------------------
+
+    Flight_Service {
+        VARCHAR2_10 Service_ID PK "eg WIFI MEAL"
+        VARCHAR2_50 Service_Name "NOT NULL"
+    }
+
+    Service_Offering {
+        VARCHAR2_10 Route_ID PK "Composite PK part 1"
+        VARCHAR2_10 Class_ID PK "Composite PK part 2"
+        VARCHAR2_10 Service_ID PK "Composite PK part 3"
+        DATE Valid_From PK "Composite PK part 4"
+        DATE Valid_To "nullable means indefinite"
+        CHAR_1 Is_Complimentary "DEFAULT Y"
+        NUMBER_10_2 Cost_If_Paid "DEFAULT 0"
+    }
+    %% Constraint: CK_Service_Dates CHECK(Valid_To IS NULL OR Valid_To >= Valid_From)
+    %% FK: Route_ID -> Flight_Route, Class_ID -> Travel_Class, Service_ID -> Flight_Service
+
+    %% PHASE 2 RELATIONSHIPS - Aircraft Configuration
+    Aircraft_Model ||--o{ Aircraft_Row_Class : has_rows
+    Travel_Class ||--o{ Aircraft_Row_Class : categorizes
+    Aircraft_Row_Class ||--o{ Aircraft_Seat_Map : has_seats
+    %% Note: Aircraft_Seat_Map has composite FK (Model_ID, Row_Number) to Aircraft_Row_Class
+
+    %% PHASE 2 RELATIONSHIPS - Flight Operations
+    Airport ||--o{ Flight_Route : source_of
+    Airport ||--o{ Flight_Route : destination_of
+    Flight_Route ||--o{ Route_Pricing : has_pricing
+    Travel_Class ||--o{ Route_Pricing : determines_price
+    Flight_Route ||--o{ Flight_Instance : scheduled_as
+    Aircraft_Model ||--o{ Flight_Instance : operates
+
+    %% PHASE 2 RELATIONSHIPS - Services
+    Flight_Route ||--o{ Service_Offering : offers_services
+    Travel_Class ||--o{ Service_Offering : for_class
+    Flight_Service ||--o{ Service_Offering : provided_on
+
+    %%--------------------------------------------------------------------
+    %% PHASE 3: USER & AUTHENTICATION
+    %% Tables: App_User
+    %% Verified from app.py:
+    %%   - SELECT User_ID FROM App_User WHERE LOWER(Email) = LOWER(:email)
+    %%   - LEFT JOIN Passenger p ON u.User_ID = p.Linked_User_ID
+    %%--------------------------------------------------------------------
+
+    App_User {
+        NUMBER User_ID PK "GENERATED BY DEFAULT AS IDENTITY"
+        VARCHAR2_100 Email "NOT NULL UNIQUE"
+        VARCHAR2_256 Password_Hash "NOT NULL"
+        VARCHAR2_20 Phone_Number "nullable"
+        TIMESTAMP Created_At "DEFAULT SYSTIMESTAMP"
+    }
+    %% Constraint: CK_User_Email CHECK(Email LIKE '%@%.%')
+
+    %%--------------------------------------------------------------------
+    %% PHASE 3: PASSENGER PROFILES
+    %% Tables: Passenger
+    %% Linked_User_ID is UNIQUE - ensures 1:0..1 with App_User
+    %% Verified from app.py:
+    %%   - SELECT First_Name FROM Passenger WHERE Linked_User_ID = :user_id
+    %%--------------------------------------------------------------------
+
+    Passenger {
+        NUMBER Passenger_ID PK "DEFAULT Passenger_Seq.NEXTVAL"
+        NUMBER Linked_User_ID FK "UNIQUE FK to App_User nullable"
+        VARCHAR2_10 Title "CHECK IN MR MS MRS DR MX CHD INF"
+        VARCHAR2_50 First_Name "NOT NULL"
+        VARCHAR2_50 Last_Name "NOT NULL"
+        VARCHAR2_20 Gender "CHECK IN MALE FEMALE OTHER"
+        DATE Date_Of_Birth "NOT NULL"
+        VARCHAR2_20 Passport_Num "nullable"
+    }
+
+    %%--------------------------------------------------------------------
+    %% PHASE 3: BOOKING & PNR SYSTEM
+    %% Tables: Booking
+    %% Booking_ID is auto-generated PNR via trigger
+    %% Verified from app.py:
+    %%   - FROM Booking WHERE Lead_User_ID = :user_id
+    %%--------------------------------------------------------------------
+
+    Booking {
+        VARCHAR2_6 Booking_ID PK "PNR eg A7F3E9"
+        NUMBER Lead_User_ID FK "FK to App_User nullable"
+        TIMESTAMP Booking_Date "DEFAULT SYSTIMESTAMP NOT NULL"
+        VARCHAR2_20 Booking_Status "DEFAULT CONFIRMED"
+        VARCHAR2_100 Contact_Email "NOT NULL"
+        VARCHAR2_20 Emergency_Phone "nullable"
+    }
+    %% CHECK: Booking_Status IN (CONFIRMED, CANCELLED, COMPLETED)
+    %% Trigger: TRG_Generate_Booking_PNR auto-generates Booking_ID
+
+    %%--------------------------------------------------------------------
+    %% PHASE 3: RESERVATION (Junction Table - Ticket)
+    %% Tables: Reservation
+    %% Connects Passenger to Flight_Instance within a Booking
+    %% Verified from app.py:
+    %%   - JOIN Reservation r ON p.Passenger_ID = r.Passenger_ID
+    %%   - JOIN Booking b ON r.Booking_ID = b.Booking_ID
+    %%--------------------------------------------------------------------
+
+    Reservation {
+        VARCHAR2_20 Reservation_ID PK "Ticket Number IAT-YYYYMMDD-NNNNNN"
+        VARCHAR2_6 Booking_ID FK "FK to Booking NOT NULL"
+        NUMBER Passenger_ID FK "FK to Passenger NOT NULL"
+        VARCHAR2_20 Instance_ID FK "FK to Flight_Instance NOT NULL"
+        NUMBER Row_Number "nullable for lap infants"
+        CHAR_1 Seat_Letter "nullable for lap infants"
+        NUMBER_10_2 Price_Charged "NOT NULL CHECK >= 0"
+        VARCHAR2_20 Passenger_Type "DEFAULT ADULT"
+        VARCHAR2_20 Ticket_Status "DEFAULT ISSUED"
+    }
+    %% CHECK: Passenger_Type IN (ADULT, LAP_INFANT, SEATED_INFANT)
+    %% CHECK: Ticket_Status IN (ISSUED, CHECKED_IN, BOARDED, NO_SHOW, CANCELLED)
+    %% UNIQUE: UQ_Seat_Instance (Instance_ID, Row_Number, Seat_Letter) - no double booking
+    %% UNIQUE: UQ_Pass_Instance (Passenger_ID, Instance_ID) - no duplicate traveler
+
+    %%--------------------------------------------------------------------
+    %% PHASE 3: TRANSACTIONS
+    %% Tables: Payment, Cancellation_Log
+    %%--------------------------------------------------------------------
+
+    Payment {
+        VARCHAR2_20 Payment_ID PK "Primary Key"
+        VARCHAR2_6 Booking_ID FK "FK to Booking NOT NULL"
+        NUMBER_10_2 Amount_Paid "NOT NULL CHECK >= 0"
+        TIMESTAMP Payment_Date "DEFAULT SYSTIMESTAMP"
+        VARCHAR2_50 Payment_Method "nullable"
+    }
+
+    Cancellation_Log {
+        NUMBER Log_ID PK "Primary Key"
+        VARCHAR2_6 Booking_ID FK "FK to Booking NOT NULL"
+        TIMESTAMP Cancel_Date "DEFAULT SYSTIMESTAMP"
+        VARCHAR2_255 Reason "nullable"
+    }
+
+    %%--------------------------------------------------------------------
+    %% PHASE 3: FAMILY RELATIONSHIPS
+    %% Tables: User_Family
+    %% Self-referential M:N on App_User
+    %% Symmetric: when accepted, two rows inserted (A->B and B->A)
+    %%--------------------------------------------------------------------
+
+    User_Family {
+        NUMBER User_ID PK "Composite PK part 1"
+        NUMBER Family_User_ID PK "Composite PK part 2"
+        VARCHAR2_30 Relationship "eg SPOUSE CHILD PARENT SIBLING"
+        VARCHAR2_20 Status "DEFAULT PENDING NOT NULL"
+        TIMESTAMP Created_At "DEFAULT SYSTIMESTAMP NOT NULL"
+    }
+    %% CHECK: Status IN (PENDING, ACCEPTED, REJECTED)
+    %% CHECK: CK_User_Family_No_Self (User_ID != Family_User_ID)
+    %% FK: User_ID -> App_User(User_ID) ON DELETE CASCADE
+    %% FK: Family_User_ID -> App_User(User_ID) ON DELETE CASCADE
+
+    %% PHASE 3 RELATIONSHIPS - User & Passenger
+    App_User ||--o| Passenger : has_profile
+    %% Note: 1:0..1 relationship - Linked_User_ID is UNIQUE and nullable
+
+    %% PHASE 3 RELATIONSHIPS - Booking
+    App_User ||--o{ Booking : makes
+    Booking ||--o{ Reservation : contains
+    Booking ||--o{ Payment : paid_via
+    Booking ||--o{ Cancellation_Log : may_cancel
+
+    %% PHASE 3 RELATIONSHIPS - Reservation (Junction)
+    Passenger ||--o{ Reservation : travels_on
+    Flight_Instance ||--o{ Reservation : has_passengers
+
+    %% PHASE 3 RELATIONSHIPS - Family (Self-referential M:N)
+    App_User ||--o{ User_Family : has_family
+    App_User ||--o{ User_Family : is_family_of
+    %% Note: User_Family is junction table linking App_User to itself
