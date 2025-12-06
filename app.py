@@ -102,7 +102,6 @@ def signup():
         last_name = request.form.get('last_name')
         date_of_birth = request.form.get('date_of_birth')
         gender = request.form.get('gender')
-        nationality = request.form.get('nationality')
         title = request.form.get('title', 'MR')
         
         print(f"DEBUG - Signup attempt for email: {email}")
@@ -148,15 +147,14 @@ def signup():
             # Create passenger profile linked to user
             cursor.execute("""
                 INSERT INTO Passenger 
-                (Linked_User_ID, First_Name, Last_Name, Date_Of_Birth, Gender, Nationality, Title)
-                VALUES (:user_id, :first_name, :last_name, TO_DATE(:dob, 'YYYY-MM-DD'), :gender, :nationality, :title)
+                (Linked_User_ID, First_Name, Last_Name, Date_Of_Birth, Gender, Title)
+                VALUES (:user_id, :first_name, :last_name, TO_DATE(:dob, 'YYYY-MM-DD'), :gender, :title)
             """, 
             user_id=next_user_id,
             first_name=first_name,
             last_name=last_name,
             dob=date_of_birth,
             gender=gender,
-            nationality=nationality,
             title=title)
             
             conn.commit()
@@ -245,7 +243,7 @@ def account_info():
         cursor.execute("""
             SELECT u.User_ID, u.Email, u.Phone_Number, u.Created_At,
                    p.First_Name, p.Last_Name, p.Date_Of_Birth, p.Gender, 
-                   p.Nationality, p.Title, p.Passport_Num
+                   p.Title, p.Passport_Num
             FROM App_User u
             LEFT JOIN Passenger p ON u.User_ID = p.Linked_User_ID
             WHERE u.User_ID = :user_id
@@ -286,9 +284,8 @@ def account_info():
             'last_name': user_data[5],
             'date_of_birth': user_data[6].strftime('%B %d, %Y') if user_data[6] else 'N/A',
             'gender': user_data[7],
-            'nationality': user_data[8],
-            'title': user_data[9],
-            'passport_number': user_data[10] or 'Not provided',
+            'title': user_data[8],
+            'passport_number': user_data[9] or 'Not provided',
             'booking_count': booking_count,
             'upcoming_flights': upcoming_flights
         }
@@ -1089,7 +1086,6 @@ def api_member_lookup():
                 p.First_Name,
                 p.Last_Name,
                 p.Gender,
-                p.Nationality,
                 TO_CHAR(p.Date_Of_Birth, 'YYYY-MM-DD') AS Date_Of_Birth,
                 p.Passport_Num
             FROM Passenger p
@@ -1102,7 +1098,7 @@ def api_member_lookup():
             return jsonify({'error': 'No passenger profile found for this User ID.'}), 404
         
         # Verify date of birth matches (security check)
-        stored_dob = passenger[6]  # Date_Of_Birth from query
+        stored_dob = passenger[5]  # Date_Of_Birth from query
         if stored_dob != date_of_birth:
             return jsonify({'error': 'User ID or Date of Birth does not match. Please verify your details.'}), 404
         
@@ -1114,9 +1110,8 @@ def api_member_lookup():
             'firstName': passenger[2],
             'lastName': passenger[3],
             'gender': passenger[4],
-            'nationality': passenger[5],
-            'dateOfBirth': passenger[6],
-            'passportNum': passenger[7],
+            'dateOfBirth': passenger[5],
+            'passportNum': passenger[6],
             'message': f'Member found: {passenger[2]} {passenger[3]}'
         })
         
@@ -1156,7 +1151,6 @@ def api_my_profile():
                 p.First_Name,
                 p.Last_Name,
                 p.Gender,
-                p.Nationality,
                 TO_CHAR(p.Date_Of_Birth, 'YYYY-MM-DD') AS Date_Of_Birth,
                 p.Passport_Num
             FROM Passenger p
@@ -1174,9 +1168,8 @@ def api_my_profile():
                 'firstName': passenger[2],
                 'lastName': passenger[3],
                 'gender': passenger[4],
-                'nationality': passenger[5],
-                'dateOfBirth': passenger[6],
-                'passportNum': passenger[7]
+                'dateOfBirth': passenger[5],
+                'passportNum': passenger[6]
             })
         else:
             # No passenger profile yet - return basic user info
@@ -1232,7 +1225,6 @@ def api_past_passengers():
                 p.First_Name,
                 p.Last_Name,
                 p.Gender,
-                p.Nationality,
                 TO_CHAR(p.Date_Of_Birth, 'YYYY-MM-DD') AS Date_Of_Birth,
                 p.Passport_Num,
                 p.Linked_User_ID,
@@ -1318,11 +1310,10 @@ def api_past_passengers():
                 'firstName': pax[2],
                 'lastName': pax[3],
                 'gender': pax[4],
-                'nationality': pax[5],
-                'dateOfBirth': pax[6],
-                'passportNum': pax[7] or '',
-                'linkedUserId': pax[8],
-                'isRegisteredUser': bool(pax[9]),
+                'dateOfBirth': pax[5],
+                'passportNum': pax[6] or '',
+                'linkedUserId': pax[7],
+                'isRegisteredUser': bool(pax[8]),
                 'recentTrips': recent_trips
             })
         
@@ -1567,7 +1558,6 @@ def api_family_list():
                 p.First_Name,
                 p.Last_Name,
                 p.Gender,
-                p.Nationality,
                 TO_CHAR(p.Date_Of_Birth, 'YYYY-MM-DD') AS Date_Of_Birth,
                 p.Passport_Num
             FROM User_Family uf
@@ -1596,9 +1586,8 @@ def api_family_list():
                     'firstName': member[6],
                     'lastName': member[7],
                     'gender': member[8],
-                    'nationality': member[9],
-                    'dateOfBirth': member[10],
-                    'passportNum': member[11]
+                    'dateOfBirth': member[9],
+                    'passportNum': member[10]
                 } if has_profile else None
             })
         
@@ -1909,7 +1898,8 @@ def api_booking_history():
 @app.route('/select-return-flight/<flight_id>')
 def select_return_flight(flight_id):
     session['selected_return_flight'] = flight_id
-    return redirect('/seat-selection')
+    # After selecting return flight, go to passenger info (not seat selection)
+    return redirect('/passenger-info')
 
 @app.route('/passenger-info', methods=['GET', 'POST'])
 def passenger_info():
@@ -2016,7 +2006,6 @@ def passenger_info():
                     'date_of_birth': request.form.get(f'date_of_birth_{i}'),
                     'gender': request.form.get(f'gender_{i}'),
                     'passport_number': request.form.get(f'passport_number_{i}', ''),
-                    'nationality': request.form.get(f'nationality_{i}', 'US'),
                     'title': request.form.get(f'title_{i}', 'MR'),
                     'is_self': is_self,  # True if user clicked "Add Myself"
                     'existing_passenger_id': int(existing_passenger_id) if existing_passenger_id else None
@@ -2028,6 +2017,25 @@ def passenger_info():
             for i, passenger in enumerate(passenger_data):
                 if not all([passenger['first_name'], passenger['last_name'], passenger['date_of_birth'], passenger['gender']]):
                     return render_template('error.html', error=f"Please fill all required fields for passenger {i+1}")
+            
+            # Check for duplicate passengers (same passenger ID or same name + DOB)
+            seen_passenger_ids = set()
+            seen_name_dob = set()
+            
+            for i, passenger in enumerate(passenger_data):
+                # Check by existing passenger ID
+                if passenger['existing_passenger_id']:
+                    if passenger['existing_passenger_id'] in seen_passenger_ids:
+                        return render_template('error.html', 
+                            error=f"Duplicate passenger detected: {passenger['first_name']} {passenger['last_name']} appears multiple times. Each passenger can only be booked once per reservation.")
+                    seen_passenger_ids.add(passenger['existing_passenger_id'])
+                
+                # Check by name + date of birth combination
+                name_dob_key = f"{passenger['first_name'].lower()}|{passenger['last_name'].lower()}|{passenger['date_of_birth']}"
+                if name_dob_key in seen_name_dob:
+                    return render_template('error.html', 
+                        error=f"Duplicate passenger detected: {passenger['first_name']} {passenger['last_name']} with DOB {passenger['date_of_birth']} appears multiple times. Each passenger can only be booked once per reservation.")
+                seen_name_dob.add(name_dob_key)
             
             # Store passenger data and count in session
             session['passenger_data'] = passenger_data
@@ -2272,7 +2280,6 @@ def process_booking():
                             Last_Name = :last_name,
                             Date_Of_Birth = TO_DATE(:dob, 'YYYY-MM-DD'),
                             Gender = :gender,
-                            Nationality = :nationality,
                             Passport_Num = :passport,
                             Title = :title
                         WHERE Passenger_ID = :pid
@@ -2281,7 +2288,6 @@ def process_booking():
                     last_name=passenger['last_name'],
                     dob=passenger['date_of_birth'],
                     gender=passenger['gender'],
-                    nationality=passenger['nationality'],
                     passport=passenger['passport_number'],
                     title=passenger['title'],
                     pid=passenger_id)
@@ -2309,7 +2315,6 @@ def process_booking():
                                 Last_Name = :last_name,
                                 Date_Of_Birth = TO_DATE(:dob, 'YYYY-MM-DD'),
                                 Gender = :gender,
-                                Nationality = :nationality,
                                 Passport_Num = :passport,
                                 Title = :title
                             WHERE Passenger_ID = :pid
@@ -2318,7 +2323,6 @@ def process_booking():
                         last_name=passenger['last_name'],
                         dob=passenger['date_of_birth'],
                         gender=passenger['gender'],
-                        nationality=passenger['nationality'],
                         passport=passenger['passport_number'],
                         title=passenger['title'],
                         pid=passenger_id)
@@ -2329,15 +2333,14 @@ def process_booking():
                         print(f"DEBUG - Creating NEW passenger profile linked to user {lead_user_id}")
                         cursor.execute("""
                             INSERT INTO Passenger 
-                            (Linked_User_ID, First_Name, Last_Name, Date_Of_Birth, Gender, Nationality, Passport_Num, Title)
-                            VALUES (:user_id, :first_name, :last_name, TO_DATE(:dob, 'YYYY-MM-DD'), :gender, :nationality, :passport, :title)
+                            (Linked_User_ID, First_Name, Last_Name, Date_Of_Birth, Gender, Passport_Num, Title)
+                            VALUES (:user_id, :first_name, :last_name, TO_DATE(:dob, 'YYYY-MM-DD'), :gender, :passport, :title)
                         """, 
                         user_id=lead_user_id,
                         first_name=passenger['first_name'],
                         last_name=passenger['last_name'],
                         dob=passenger['date_of_birth'],
                         gender=passenger['gender'],
-                        nationality=passenger['nationality'],
                         passport=passenger['passport_number'],
                         title=passenger['title'])
                         
@@ -2353,14 +2356,13 @@ def process_booking():
                     print(f"DEBUG - Creating guest/additional passenger: {passenger['first_name']} {passenger['last_name']}")
                     cursor.execute("""
                         INSERT INTO Passenger 
-                        (First_Name, Last_Name, Date_Of_Birth, Gender, Nationality, Passport_Num, Title)
-                        VALUES (:first_name, :last_name, TO_DATE(:dob, 'YYYY-MM-DD'), :gender, :nationality, :passport, :title)
+                        (First_Name, Last_Name, Date_Of_Birth, Gender, Passport_Num, Title)
+                        VALUES (:first_name, :last_name, TO_DATE(:dob, 'YYYY-MM-DD'), :gender, :passport, :title)
                     """, 
                     first_name=passenger['first_name'],
                     last_name=passenger['last_name'],
                     dob=passenger['date_of_birth'],
                     gender=passenger['gender'],
-                    nationality=passenger['nationality'],
                     passport=passenger['passport_number'],
                     title=passenger['title'])
                     
@@ -2754,7 +2756,7 @@ def download_tickets(booking_id):
         cursor.execute("""
             SELECT 
                 b.Booking_ID, 
-                p.Passenger_ID, p.First_Name, p.Last_Name, p.Title, p.Nationality,
+                p.Passenger_ID, p.First_Name, p.Last_Name, p.Title,
                 r.Reservation_ID, r.Row_Number, r.Seat_Letter, r.Price_Charged,
                 fi.Instance_ID, fi.Model_ID,
                 TO_CHAR(fi.Departure_Time, 'DD-MON-YYYY HH24:MI'),
@@ -2800,30 +2802,29 @@ def download_tickets(booking_id):
                 'first_name': row[2],
                 'last_name': row[3],
                 'title': row[4],
-                'nationality': row[5],
-                'reservation_id': row[6],
-                'row_number': row[7],
-                'seat_letter': row[8],
-                'seat_cost': float(row[9]),
-                'instance_id': row[10],
-                'model_id': row[11],
-                'departure_time': row[12],
-                'arrival_time': row[13],
-                'departure_airport': row[14],
-                'arrival_airport': row[15],
-                'departure_city': row[16],
-                'arrival_city': row[17],
-                'travel_class': row[18],
-                'source_airport': row[19],
-                'dest_airport': row[20],
-                'flight_type': row[21],  # This tells us if it's OUTBOUND or RETURN
-                'seat_number': f"{row[7]}{row[8]}",
-                'flight_date': row[12].split(' ')[0] if row[12] else 'N/A'
+                'reservation_id': row[5],
+                'row_number': row[6],
+                'seat_letter': row[7],
+                'seat_cost': float(row[8]),
+                'instance_id': row[9],
+                'model_id': row[10],
+                'departure_time': row[11],
+                'arrival_time': row[12],
+                'departure_airport': row[13],
+                'arrival_airport': row[14],
+                'departure_city': row[15],
+                'arrival_city': row[16],
+                'travel_class': row[17],
+                'source_airport': row[18],
+                'dest_airport': row[19],
+                'flight_type': row[20],  # This tells us if it's OUTBOUND or RETURN
+                'seat_number': f"{row[6]}{row[7]}",
+                'flight_date': row[11].split(' ')[0] if row[11] else 'N/A'
             }
             
             print(f"DEBUG - Reservation {reservation['reservation_id']}: {reservation['departure_city']} to {reservation['arrival_city']} - Type: {reservation['flight_type']}")
             
-            if row[21] == 'OUTBOUND':
+            if row[20] == 'OUTBOUND':
                 outbound_data.append(reservation)
             else:
                 return_data.append(reservation)
@@ -2913,7 +2914,7 @@ def view_ticket(reservation_id):
     try:
         cursor.execute("""
             SELECT r.Reservation_ID, r.Booking_ID, r.Passenger_ID, r.Row_Number, r.Seat_Letter, r.Price_Charged,
-                   p.First_Name, p.Last_Name, p.Title, p.Nationality,
+                   p.First_Name, p.Last_Name, p.Title,
                    fi.Instance_ID, fi.Model_ID,
                    TO_CHAR(fi.Departure_Time, 'DD-MON-YYYY HH24:MI'),
                    TO_CHAR(fi.Arrival_Time, 'DD-MON-YYYY HH24:MI'),
@@ -2949,18 +2950,17 @@ def view_ticket(reservation_id):
             'seat_cost': float(ticket_data[5]),
             'passenger_name': f"{ticket_data[6]} {ticket_data[7]}",
             'title': ticket_data[8],
-            'nationality': ticket_data[9],
             'seat_number': f"{ticket_data[3]}{ticket_data[4]}",
-            'flight_number': ticket_data[10],
-            'aircraft_type': ticket_data[11],
-            'departure_time': ticket_data[12],
-            'arrival_time': ticket_data[13],
-            'departure_airport': ticket_data[14],
-            'arrival_airport': ticket_data[15],
-            'departure_city': ticket_data[16],
-            'arrival_city': ticket_data[17],
-            'travel_class': ticket_data[18],
-            'flight_date': ticket_data[12].split(' ')[0],
+            'flight_number': ticket_data[9],
+            'aircraft_type': ticket_data[10],
+            'departure_time': ticket_data[11],
+            'arrival_time': ticket_data[12],
+            'departure_airport': ticket_data[13],
+            'arrival_airport': ticket_data[14],
+            'departure_city': ticket_data[15],
+            'arrival_city': ticket_data[16],
+            'travel_class': ticket_data[17],
+            'flight_date': ticket_data[11].split(' ')[0],
             'ticket_id': f"TKT{datetime.now().strftime('%Y%m%d%H%M%S')}",
         }
         
@@ -3024,7 +3024,7 @@ def verify_booking():
         # Get all reservations for this booking - UPDATED
         cursor.execute("""
             SELECT r.Reservation_ID, r.Passenger_ID, r.Instance_ID, r.Row_Number, r.Seat_Letter, r.Price_Charged,
-                   p.First_Name, p.Last_Name, p.Title, p.Nationality,
+                   p.First_Name, p.Last_Name, p.Title,
                    fi.Departure_Time, fi.Arrival_Time,
                    a1.Airport_Name as Departure_Airport, a2.Airport_Name as Arrival_Airport,
                    c1.City_Name as Departure_City, c2.City_Name as Arrival_City,
@@ -3058,14 +3058,13 @@ def verify_booking():
                 'seat_cost': float(res[5]),
                 'passenger_name': f"{res[6]} {res[7]}",
                 'title': res[8],
-                'nationality': res[9],
-                'departure_time': res[10].strftime('%d-%b-%Y %H:%M'),
-                'arrival_time': res[11].strftime('%d-%b-%Y %H:%M'),
-                'departure_airport': res[12],
-                'arrival_airport': res[13],
-                'departure_city': res[14],
-                'arrival_city': res[15],
-                'travel_class': res[16],
+                'departure_time': res[9].strftime('%d-%b-%Y %H:%M'),
+                'arrival_time': res[10].strftime('%d-%b-%Y %H:%M'),
+                'departure_airport': res[11],
+                'arrival_airport': res[12],
+                'departure_city': res[13],
+                'arrival_city': res[14],
+                'travel_class': res[15],
                 'seat_number': f"{res[3]}{res[4]}"
             })
         
@@ -3204,7 +3203,7 @@ def redirect_to_reschedule(reservation_id):
         # Get original reservation details for rescheduling - UPDATED
         cursor.execute("""
             SELECT r.Reservation_ID, r.Booking_ID, r.Passenger_ID, r.Instance_ID, r.Row_Number, r.Seat_Letter, r.Price_Charged,
-                   p.First_Name, p.Last_Name, p.Title, p.Nationality,
+                   p.First_Name, p.Last_Name, p.Title,
                    fi.Model_ID, fr.Source_Airport, fr.Dest_Airport,
                    fi.Departure_Time, fi.Arrival_Time,
                    a1.Airport_Name as Departure_Airport, a2.Airport_Name as Arrival_Airport,
@@ -3239,18 +3238,17 @@ def redirect_to_reschedule(reservation_id):
             'price_charged': float(original_flight[6]),
             'passenger_name': f"{original_flight[7]} {original_flight[8]}",
             'title': original_flight[9],
-            'nationality': original_flight[10],
-            'model_id': original_flight[11],
-            'departure_airport_id': original_flight[12],
-            'arrival_airport_id': original_flight[13],
-            'departure_time': original_flight[14].strftime('%d-%b-%Y %H:%M'),
-            'arrival_time': original_flight[15].strftime('%d-%b-%Y %H:%M'),
-            'departure_airport': original_flight[16],
-            'arrival_airport': original_flight[17],
-            'departure_city': original_flight[18],
-            'arrival_city': original_flight[19],
-            'travel_class': original_flight[20],
-            'departure_date': original_flight[14].strftime('%Y-%m-%d')
+            'model_id': original_flight[10],
+            'departure_airport_id': original_flight[11],
+            'arrival_airport_id': original_flight[12],
+            'departure_time': original_flight[13].strftime('%d-%b-%Y %H:%M'),
+            'arrival_time': original_flight[14].strftime('%d-%b-%Y %H:%M'),
+            'departure_airport': original_flight[15],
+            'arrival_airport': original_flight[16],
+            'departure_city': original_flight[17],
+            'arrival_city': original_flight[18],
+            'travel_class': original_flight[19],
+            'departure_date': original_flight[13].strftime('%Y-%m-%d')
         }
         
         # Store the original booking ID in session for seat exclusion
@@ -3333,7 +3331,7 @@ def booking_actions():
         # Get all reservations for this booking - UPDATED
         cursor.execute("""
             SELECT r.Reservation_ID, r.Passenger_ID, r.Instance_ID, r.Row_Number, r.Seat_Letter, r.Price_Charged,
-                   p.First_Name, p.Last_Name, p.Title, p.Nationality,
+                   p.First_Name, p.Last_Name, p.Title,
                    fi.Departure_Time, fi.Arrival_Time,
                    a1.Airport_Name as Departure_Airport, a2.Airport_Name as Arrival_Airport,
                    c1.City_Name as Departure_City, c2.City_Name as Arrival_City,
@@ -3367,14 +3365,13 @@ def booking_actions():
                 'seat_cost': float(res[5]),
                 'passenger_name': f"{res[6]} {res[7]}",
                 'title': res[8],
-                'nationality': res[9],
-                'departure_time': res[10].strftime('%d-%b-%Y %H:%M'),
-                'arrival_time': res[11].strftime('%d-%b-%Y %H:%M'),
-                'departure_airport': res[12],
-                'arrival_airport': res[13],
-                'departure_city': res[14],
-                'arrival_city': res[15],
-                'travel_class': res[16],
+                'departure_time': res[9].strftime('%d-%b-%Y %H:%M'),
+                'arrival_time': res[10].strftime('%d-%b-%Y %H:%M'),
+                'departure_airport': res[11],
+                'arrival_airport': res[12],
+                'departure_city': res[13],
+                'arrival_city': res[14],
+                'travel_class': res[15],
                 'seat_number': f"{res[3]}{res[4]}"
             })
         

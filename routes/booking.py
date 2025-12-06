@@ -213,7 +213,6 @@ def passenger_info():
                 'date_of_birth': request.form.get(f'date_of_birth_{i}', ''),
                 'gender': request.form.get(f'gender_{i}', ''),
                 'passport_number': request.form.get(f'passport_number_{i}', '').strip(),
-                'nationality': request.form.get(f'nationality_{i}', 'Pakistani').strip(),
                 'title': request.form.get(f'title_{i}', 'MR')
             }
             # Basic validation
@@ -405,14 +404,13 @@ def process_booking():
                 
                 cursor.execute("""
                     INSERT INTO Passenger 
-                    (First_Name, Last_Name, Date_Of_Birth, Gender, Nationality, Passport_Num, Title)
-                    VALUES (:first_name, :last_name, TO_DATE(:dob, 'YYYY-MM-DD'), :gender, :nationality, :passport, :title)
+                    (First_Name, Last_Name, Date_Of_Birth, Gender, Passport_Num, Title)
+                    VALUES (:first_name, :last_name, TO_DATE(:dob, 'YYYY-MM-DD'), :gender, :passport, :title)
                 """, 
                 first_name=passenger['first_name'],
                 last_name=passenger['last_name'],
                 dob=passenger['date_of_birth'],
                 gender=passenger['gender'],
-                nationality=passenger['nationality'],
                 passport=passenger['passport_number'],
                 title=passenger['title'])
                 
@@ -622,7 +620,7 @@ def download_tickets(booking_id):
         # Get booking and passenger details using new schema
         cursor.execute("""
             SELECT b.Booking_ID, 
-                   p.Passenger_ID, p.First_Name, p.Last_Name, p.Title, p.Nationality,
+                   p.Passenger_ID, p.First_Name, p.Last_Name, p.Title,
                    r.Reservation_ID, r.Row_Number, r.Seat_Letter, r.Price_Charged,
                    fi.Instance_ID, fi.Model_ID,
                    TO_CHAR(fi.Departure_Time, 'DD-MON-YYYY HH24:MI'),
@@ -655,20 +653,20 @@ def download_tickets(booking_id):
         passengers_data = []
         booking_info = {
             'booking_id': booking_data[0][0],
-            'total_amount': sum(float(row[9]) for row in booking_data),
-            'flight_number': booking_data[0][10],
-            'aircraft_type': booking_data[0][11],
-            'departure_time': booking_data[0][12],
-            'arrival_time': booking_data[0][13],
-            'departure_airport': booking_data[0][14],
-            'arrival_airport': booking_data[0][15],
-            'departure_city': booking_data[0][16],
-            'arrival_city': booking_data[0][17],
-            'travel_class': booking_data[0][18],
+            'total_amount': sum(float(row[8]) for row in booking_data),
+            'flight_number': booking_data[0][9],
+            'aircraft_type': booking_data[0][10],
+            'departure_time': booking_data[0][11],
+            'arrival_time': booking_data[0][12],
+            'departure_airport': booking_data[0][13],
+            'arrival_airport': booking_data[0][14],
+            'departure_city': booking_data[0][15],
+            'arrival_city': booking_data[0][16],
+            'travel_class': booking_data[0][17],
         }
         
         # Extract flight date from departure time
-        flight_date = booking_data[0][12].split(' ')[0]
+        flight_date = booking_data[0][11].split(' ')[0]
         booking_info['flight_date'] = flight_date
         
         for row in booking_data:
@@ -677,12 +675,11 @@ def download_tickets(booking_id):
                 'first_name': row[2],
                 'last_name': row[3],
                 'title': row[4],
-                'nationality': row[5],
-                'reservation_id': row[6],
-                'row_number': row[7],
-                'seat_letter': row[8],
-                'seat_number': f"{row[7]}{row[8]}",
-                'seat_cost': float(row[9]),
+                'reservation_id': row[5],
+                'row_number': row[6],
+                'seat_letter': row[7],
+                'seat_number': f"{row[6]}{row[7]}",
+                'seat_cost': float(row[8]),
             }
             passengers_data.append(passenger)
         
@@ -734,7 +731,7 @@ def view_ticket(reservation_id):
     try:
         cursor.execute("""
             SELECT r.Reservation_ID, r.Booking_ID, r.Passenger_ID, r.Row_Number, r.Seat_Letter, r.Price_Charged,
-                   p.First_Name, p.Last_Name, p.Title, p.Nationality,
+                   p.First_Name, p.Last_Name, p.Title,
                    fi.Instance_ID, fi.Model_ID,
                    TO_CHAR(fi.Departure_Time, 'DD-MON-YYYY HH24:MI'),
                    TO_CHAR(fi.Arrival_Time, 'DD-MON-YYYY HH24:MI'),
@@ -770,18 +767,17 @@ def view_ticket(reservation_id):
             'seat_cost': float(ticket_data[5]),
             'passenger_name': f"{ticket_data[6]} {ticket_data[7]}",
             'title': ticket_data[8],
-            'nationality': ticket_data[9],
             'seat_number': f"{ticket_data[3]}{ticket_data[4]}",
-            'flight_number': ticket_data[10],
-            'aircraft_type': ticket_data[11],
-            'departure_time': ticket_data[12],
-            'arrival_time': ticket_data[13],
-            'departure_airport': ticket_data[14],
-            'arrival_airport': ticket_data[15],
-            'departure_city': ticket_data[16],
-            'arrival_city': ticket_data[17],
-            'travel_class': ticket_data[18],
-            'flight_date': ticket_data[12].split(' ')[0],
+            'flight_number': ticket_data[9],
+            'aircraft_type': ticket_data[10],
+            'departure_time': ticket_data[11],
+            'arrival_time': ticket_data[12],
+            'departure_airport': ticket_data[13],
+            'arrival_airport': ticket_data[14],
+            'departure_city': ticket_data[15],
+            'arrival_city': ticket_data[16],
+            'travel_class': ticket_data[17],
+            'flight_date': ticket_data[11].split(' ')[0],
             'ticket_id': f"TKT{datetime.now().strftime('%Y%m%d%H%M%S')}",
         }
         

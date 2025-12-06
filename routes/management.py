@@ -40,7 +40,7 @@ def verify_booking():
         # Get all reservations for this booking
         cursor.execute("""
             SELECT r.Reservation_ID, r.Passenger_ID, r.Instance_ID, r.Row_Number, r.Seat_Letter, r.Price_Charged,
-                   p.First_Name, p.Last_Name, p.Title, p.Nationality,
+                   p.First_Name, p.Last_Name, p.Title,
                    fi.Departure_Time, fi.Arrival_Time,
                    a1.Airport_Name as Departure_Airport, a2.Airport_Name as Arrival_Airport,
                    c1.City_Name as Departure_City, c2.City_Name as Arrival_City,
@@ -74,14 +74,13 @@ def verify_booking():
                 'seat_cost': float(res[5]),
                 'passenger_name': f"{res[6]} {res[7]}",
                 'title': res[8],
-                'nationality': res[9],
-                'departure_time': res[10].strftime('%d-%b-%Y %H:%M'),
-                'arrival_time': res[11].strftime('%d-%b-%Y %H:%M'),
-                'departure_airport': res[12],
-                'arrival_airport': res[13],
-                'departure_city': res[14],
-                'arrival_city': res[15],
-                'travel_class': res[16],
+                'departure_time': res[9].strftime('%d-%b-%Y %H:%M'),
+                'arrival_time': res[10].strftime('%d-%b-%Y %H:%M'),
+                'departure_airport': res[11],
+                'arrival_airport': res[12],
+                'departure_city': res[13],
+                'arrival_city': res[14],
+                'travel_class': res[15],
                 'seat_number': f"{res[3]}{res[4]}"
             })
         
@@ -223,7 +222,7 @@ def redirect_to_reschedule(reservation_id):
         # Get original reservation details for rescheduling
         cursor.execute("""
             SELECT r.Reservation_ID, r.Booking_ID, r.Passenger_ID, r.Instance_ID, r.Row_Number, r.Seat_Letter, r.Price_Charged,
-                   p.First_Name, p.Last_Name, p.Title, p.Nationality,
+                   p.First_Name, p.Last_Name, p.Title,
                    fi.Model_ID, fr.Source_Airport, fr.Dest_Airport,
                    fi.Departure_Time, fi.Arrival_Time,
                    a1.Airport_Name as Departure_Airport, a2.Airport_Name as Arrival_Airport,
@@ -258,18 +257,17 @@ def redirect_to_reschedule(reservation_id):
             'price_charged': float(original_flight[6]),
             'passenger_name': f"{original_flight[7]} {original_flight[8]}",
             'title': original_flight[9],
-            'nationality': original_flight[10],
-            'model_id': original_flight[11],
-            'departure_airport_id': original_flight[12],
-            'arrival_airport_id': original_flight[13],
-            'departure_time': original_flight[14].strftime('%d-%b-%Y %H:%M'),
-            'arrival_time': original_flight[15].strftime('%d-%b-%Y %H:%M'),
-            'departure_airport': original_flight[16],
-            'arrival_airport': original_flight[17],
-            'departure_city': original_flight[18],
-            'arrival_city': original_flight[19],
-            'travel_class': original_flight[20],
-            'departure_date': original_flight[14].strftime('%Y-%m-%d')
+            'model_id': original_flight[10],
+            'departure_airport_id': original_flight[11],
+            'arrival_airport_id': original_flight[12],
+            'departure_time': original_flight[13].strftime('%d-%b-%Y %H:%M'),
+            'arrival_time': original_flight[14].strftime('%d-%b-%Y %H:%M'),
+            'departure_airport': original_flight[15],
+            'arrival_airport': original_flight[16],
+            'departure_city': original_flight[17],
+            'arrival_city': original_flight[18],
+            'travel_class': original_flight[19],
+            'departure_date': original_flight[13].strftime('%Y-%m-%d')
         }
         
         # Store the original booking ID in session for seat exclusion
@@ -322,7 +320,7 @@ def select_reschedule_flight(flight_id):
     session['reschedule_original_booking'] = original_booking_id
     
     # Redirect to seat selection for the new flight
-    return redirect(url_for('booking.seat_selection'))
+    return redirect(url_for('seat_selection'))
 
 
 @management_bp.route('/booking-actions')
@@ -356,7 +354,7 @@ def booking_actions():
         # Get all reservations for this booking
         cursor.execute("""
             SELECT r.Reservation_ID, r.Passenger_ID, r.Instance_ID, r.Row_Number, r.Seat_Letter, r.Price_Charged,
-                   p.First_Name, p.Last_Name, p.Title, p.Nationality,
+                   p.First_Name, p.Last_Name, p.Title,
                    fi.Departure_Time, fi.Arrival_Time,
                    a1.Airport_Name as Departure_Airport, a2.Airport_Name as Arrival_Airport,
                    c1.City_Name as Departure_City, c2.City_Name as Arrival_City,
@@ -390,14 +388,13 @@ def booking_actions():
                 'seat_cost': float(res[5]),
                 'passenger_name': f"{res[6]} {res[7]}",
                 'title': res[8],
-                'nationality': res[9],
-                'departure_time': res[10].strftime('%d-%b-%Y %H:%M'),
-                'arrival_time': res[11].strftime('%d-%b-%Y %H:%M'),
-                'departure_airport': res[12],
-                'arrival_airport': res[13],
-                'departure_city': res[14],
-                'arrival_city': res[15],
-                'travel_class': res[16],
+                'departure_time': res[9].strftime('%d-%b-%Y %H:%M'),
+                'arrival_time': res[10].strftime('%d-%b-%Y %H:%M'),
+                'departure_airport': res[11],
+                'arrival_airport': res[12],
+                'departure_city': res[13],
+                'arrival_city': res[14],
+                'travel_class': res[15],
                 'seat_number': f"{res[3]}{res[4]}"
             })
         

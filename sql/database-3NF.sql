@@ -143,7 +143,9 @@ CREATE TABLE Flight_Instance (
     Arrival_Time   TIMESTAMP NOT NULL,
     Flight_Status  VARCHAR2(20) DEFAULT 'SCHEDULED' 
                    CHECK (Flight_Status IN ('SCHEDULED','DELAYED','CANCELLED','LANDED')),
-    CONSTRAINT CK_Arrival_After_Dep CHECK (Arrival_Time > Departure_Time)
+    Price_Multiplier NUMBER(3,2) DEFAULT 1.00, -- Per-flight pricing adjustment (e.g., 1.25 = 25% more expensive)
+    CONSTRAINT CK_Arrival_After_Dep CHECK (Arrival_Time > Departure_Time),
+    CONSTRAINT CK_Price_Multiplier CHECK (Price_Multiplier > 0)
 );
 
 -- APP USER (The Account Holder)
@@ -208,7 +210,6 @@ CREATE TABLE Passenger (
     First_Name     VARCHAR2(50) NOT NULL,
     Last_Name      VARCHAR2(50) NOT NULL,
     Gender         VARCHAR2(20) CHECK (Gender IN ('MALE', 'FEMALE', 'OTHER')),
-    Nationality    VARCHAR2(50) NOT NULL,
     Date_Of_Birth  DATE NOT NULL,
     
     -- Passport Logic: 
@@ -643,7 +644,6 @@ SELECT
     p.First_Name,
     p.Last_Name,
     p.Gender,
-    p.Nationality,
     p.Date_Of_Birth,
     p.Passport_Num,
     CASE WHEN p.Linked_User_ID IS NOT NULL THEN 'Y' ELSE 'N' END AS Is_Registered_User,

@@ -193,7 +193,6 @@ CREATE TABLE Passenger (
     First_Name     VARCHAR2(50) NOT NULL,
     Last_Name      VARCHAR2(50) NOT NULL,
     Gender         VARCHAR2(20) CHECK (Gender IN ('MALE', 'FEMALE', 'OTHER')),
-    Nationality    VARCHAR2(50) NOT NULL,
     Date_Of_Birth  DATE NOT NULL,
     
     -- Passport Logic: 

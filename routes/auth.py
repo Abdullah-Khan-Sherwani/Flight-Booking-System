@@ -76,7 +76,6 @@ def signup():
         last_name = request.form.get('last_name')
         date_of_birth = request.form.get('date_of_birth')
         gender = request.form.get('gender')
-        nationality = request.form.get('nationality')
         title = request.form.get('title', 'MR')
         
         print(f"DEBUG - Signup attempt for email: {email}")
@@ -122,15 +121,14 @@ def signup():
             # Create passenger profile linked to user
             cursor.execute("""
                 INSERT INTO Passenger 
-                (Linked_User_ID, First_Name, Last_Name, Date_Of_Birth, Gender, Nationality, Title)
-                VALUES (:user_id, :first_name, :last_name, TO_DATE(:dob, 'YYYY-MM-DD'), :gender, :nationality, :title)
+                (Linked_User_ID, First_Name, Last_Name, Date_Of_Birth, Gender, Title)
+                VALUES (:user_id, :first_name, :last_name, TO_DATE(:dob, 'YYYY-MM-DD'), :gender, :title)
             """, 
             user_id=next_user_id,
             first_name=first_name,
             last_name=last_name,
             dob=date_of_birth,
             gender=gender,
-            nationality=nationality,
             title=title)
             
             conn.commit()
@@ -215,7 +213,7 @@ def account_info():
         cursor.execute("""
             SELECT u.User_ID, u.Email, u.Phone_Number, u.Created_At,
                    p.First_Name, p.Last_Name, p.Date_Of_Birth, p.Gender, 
-                   p.Nationality, p.Title, p.Passport_Num
+                   p.Title, p.Passport_Num
             FROM App_User u
             LEFT JOIN Passenger p ON u.User_ID = p.Linked_User_ID
             WHERE u.User_ID = :user_id
@@ -256,9 +254,8 @@ def account_info():
             'last_name': user_data[5],
             'date_of_birth': user_data[6].strftime('%B %d, %Y') if user_data[6] else 'N/A',
             'gender': user_data[7],
-            'nationality': user_data[8],
-            'title': user_data[9],
-            'passport_number': user_data[10] or 'Not provided',
+            'title': user_data[8],
+            'passport_number': user_data[9] or 'Not provided',
             'booking_count': booking_count,
             'upcoming_flights': upcoming_flights
         }

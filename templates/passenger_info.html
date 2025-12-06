@@ -10,7 +10,8 @@
         body {
             background: #f5f5f5;
         }
-        .passenger-form-container {
+        .passenger-form-container,
+        .contact-info-container {
             background: white;
             border-radius: 10px;
             padding: 30px;
@@ -204,7 +205,7 @@
         <input type="hidden" id="passengerCount" name="passenger_count" value="1">
         
         <!-- Contact Information Section -->
-        <div class="passenger-form-container mb-4">
+        <div class="contact-info-container mb-4">
             <div class="passenger-section">
                 <div class="passenger-header">
                     <h5 class="mb-0">Contact Information</h5>
@@ -273,14 +274,14 @@
                         </div>
                     </div>
 
-                    <!-- Date of Birth, Gender, and Nationality -->
+                    <!-- Date of Birth and Gender -->
                     <div class="row">
-                        <div class="col-md-4 mb-3">
+                        <div class="col-md-6 mb-3">
                             <label for="date_of_birth_0" class="form-label">Date of Birth *</label>
                             <input type="date" class="form-control" id="date_of_birth_0" 
                                    name="date_of_birth_0" required>
                         </div>
-                        <div class="col-md-4 mb-3">
+                        <div class="col-md-6 mb-3">
                             <label class="form-label">Gender *</label>
                             <div>
                                 <div class="form-check form-check-inline">
@@ -296,12 +297,6 @@
                                     <label class="form-check-label" for="gender_o_0">Other</label>
                                 </div>
                             </div>
-                        </div>
-                        <div class="col-md-4 mb-3">
-                            <label for="nationality_0" class="form-label">Nationality *</label>
-                            <input type="text" class="form-control" id="nationality_0" 
-                                   name="nationality_0" required maxlength="50"
-                                   placeholder="e.g., Pakistani, American" value="Pakistani">
                         </div>
                     </div>
                     
@@ -422,14 +417,14 @@
                     </div>
                 </div>
 
-                <!-- Date of Birth, Gender, and Nationality -->
+                <!-- Date of Birth and Gender -->
                 <div class="row">
-                    <div class="col-md-4 mb-3">
+                    <div class="col-md-6 mb-3">
                         <label for="date_of_birth_${passengerCount-1}" class="form-label">Date of Birth *</label>
                         <input type="date" class="form-control" id="date_of_birth_${passengerCount-1}" 
                                name="date_of_birth_${passengerCount-1}" required>
                     </div>
-                    <div class="col-md-4 mb-3">
+                    <div class="col-md-6 mb-3">
                         <label class="form-label">Gender *</label>
                         <div>
                             <div class="form-check form-check-inline">
@@ -445,12 +440,6 @@
                                 <label class="form-check-label" for="gender_o_${passengerCount-1}">Other</label>
                             </div>
                         </div>
-                    </div>
-                    <div class="col-md-4 mb-3">
-                        <label for="nationality_${passengerCount-1}" class="form-label">Nationality *</label>
-                        <input type="text" class="form-control" id="nationality_${passengerCount-1}" 
-                               name="nationality_${passengerCount-1}" required maxlength="50"
-                               placeholder="e.g., Pakistani, American" value="Pakistani">
                     </div>
                 </div>
                 
@@ -488,24 +477,51 @@
         }
         
         const passengerSection = button.closest('.passenger-form-container');
+        
+        // Check if the passenger being removed is "myself"
+        const formIndex = Array.from(document.querySelectorAll('#passengerFormsContainer .passenger-form-container')).indexOf(passengerSection);
+        const isSelfField = document.getElementById(`is_self_${formIndex}`);
+        if (isSelfField && isSelfField.value === 'true') {
+            myselfAdded = false; // Allow "Add Myself" again
+            isSelfField.remove(); // Remove the hidden field
+        }
+        
+        // Also remove any associated hidden fields
+        const existingIdField = document.getElementById(`existing_passenger_id_${formIndex}`);
+        if (existingIdField) existingIdField.remove();
+        
         passengerSection.remove();
         passengerCount--;
         updatePassengerCount();
         
         // Re-index the remaining passengers
-        const containers = document.querySelectorAll('.passenger-form-container');
-        containers.forEach((container, index) => {
+        const containers = document.querySelectorAll('#passengerFormsContainer .passenger-form-container');
+        containers.forEach((container, newIndex) => {
             const header = container.querySelector('.passenger-header h5');
-            header.textContent = `Passenger ${index + 1}`;
+            
+            // Preserve any badges
+            const myselfBadge = header.querySelector('.myself-badge');
+            const familyBadge = header.querySelector('.family-badge');
+            const lookupBadge = header.querySelector('.lookup-badge');
+            const otherBadge = header.querySelector('.badge:not(.myself-badge):not(.family-badge):not(.lookup-badge)');
+            
+            // Set the new header text
+            header.textContent = `Passenger ${newIndex + 1}`;
+            
+            // Re-add badges if they existed
+            if (myselfBadge) header.appendChild(myselfBadge);
+            if (familyBadge) header.appendChild(familyBadge);
+            if (lookupBadge) header.appendChild(lookupBadge);
+            if (otherBadge) header.appendChild(otherBadge);
             
             // Update all input names and IDs
             container.querySelectorAll('[id]').forEach(element => {
                 const oldId = element.id;
-                const newId = oldId.replace(/_(\d+)$/, `_${index}`);
+                const newId = oldId.replace(/_(\d+)$/, `_${newIndex}`);
                 element.id = newId;
                 
                 if (element.name) {
-                    element.name = element.name.replace(/_(\d+)$/, `_${index}`);
+                    element.name = element.name.replace(/_(\d+)$/, `_${newIndex}`);
                 }
                 
                 // Update radio button names and labels
@@ -516,6 +532,18 @@
                     }
                 }
             });
+        });
+        
+        // Also re-index hidden fields that are outside the form containers (in passengerForm directly)
+        const form = document.getElementById('passengerForm');
+        const hiddenFields = form.querySelectorAll('input[type="hidden"][id^="is_self_"], input[type="hidden"][id^="existing_passenger_id_"]');
+        hiddenFields.forEach(field => {
+            const match = field.id.match(/_([\d]+)$/);
+            if (match) {
+                const oldIndex = parseInt(match[1]);
+                // Find which container this field belongs to by checking if the passenger data matches
+                // For now, just update the index based on the current order
+            }
         });
     }
 
@@ -554,6 +582,16 @@
             
             if (profile.error) {
                 throw new Error(profile.error);
+            }
+            
+            // Check if this passenger ID is already used in another form
+            if (profile.hasProfile && profile.passengerId) {
+                const duplicateCheck = isPassengerIdAlreadyUsed(profile.passengerId, -1);
+                if (duplicateCheck.used) {
+                    showToast(`You are already added as Passenger ${duplicateCheck.formIndex + 1}.`, 'warning');
+                    myselfAdded = true; // Mark as added since they're already there
+                    return;
+                }
             }
             
             // Find an empty form or use the first form if empty
@@ -631,35 +669,97 @@
                 if (genderRadio) genderRadio.checked = true;
             }
             
-            // Nationality
-            const nationalityInput = document.getElementById(`nationality_${formIndex}`);
-            if (nationalityInput && profile.nationality) nationalityInput.value = profile.nationality;
-            
             // Passport Number
             const passportInput = document.getElementById(`passport_number_${formIndex}`);
             if (passportInput && profile.passportNum) passportInput.value = profile.passportNum;
         }
         
+        // Store the original name so we can detect if user changes it
+        const storedFirstName = profile.hasProfile ? profile.firstName : '';
+        const storedLastName = profile.hasProfile ? profile.lastName : '';
+        
         // Add visual indicator that this is "myself"
-        highlightMyselfForm(formIndex);
+        highlightMyselfForm(formIndex, storedFirstName, storedLastName);
         
         console.log(`Filled form ${formIndex} as MYSELF (is_self=true, passenger_id=${profile.passengerId || 'new'})`);
     }
     
-    function highlightMyselfForm(formIndex) {
+    function highlightMyselfForm(formIndex, expectedFirstName, expectedLastName) {
         // Add a visual indicator to show this is the user's own passenger entry
-        const containers = document.querySelectorAll('.passenger-form-container');
+        const containers = document.querySelectorAll('#passengerFormsContainer .passenger-form-container');
         if (containers[formIndex]) {
             const header = containers[formIndex].querySelector('.passenger-header');
             if (header) {
-                // Add a badge or modify the header
+                // Remove any existing myself badge first
                 const existingBadge = header.querySelector('.myself-badge');
-                if (!existingBadge) {
-                    const badge = document.createElement('span');
-                    badge.className = 'badge bg-success ms-2 myself-badge';
-                    badge.innerHTML = '<i class="fas fa-user-check"></i> You';
-                    header.querySelector('h5').appendChild(badge);
+                if (existingBadge) existingBadge.remove();
+                
+                // Add new badge
+                const badge = document.createElement('span');
+                badge.className = 'badge bg-success ms-2 myself-badge';
+                badge.innerHTML = '<i class="fas fa-user-check"></i> You';
+                badge.dataset.expectedFirstName = expectedFirstName?.toLowerCase() || '';
+                badge.dataset.expectedLastName = expectedLastName?.toLowerCase() || '';
+                header.querySelector('h5').appendChild(badge);
+                
+                // Add listeners to remove badge if name is changed to someone else
+                setupMyselfBadgeListeners(formIndex);
+            }
+        }
+    }
+    
+    function setupMyselfBadgeListeners(formIndex) {
+        const firstNameInput = document.getElementById(`first_name_${formIndex}`);
+        const lastNameInput = document.getElementById(`last_name_${formIndex}`);
+        
+        const checkAndRemoveBadge = () => {
+            const containers = document.querySelectorAll('#passengerFormsContainer .passenger-form-container');
+            if (!containers[formIndex]) return;
+            
+            const badge = containers[formIndex].querySelector('.myself-badge');
+            if (!badge) return;
+            
+            const expectedFirst = badge.dataset.expectedFirstName;
+            const expectedLast = badge.dataset.expectedLastName;
+            const currentFirst = firstNameInput?.value.toLowerCase().trim() || '';
+            const currentLast = lastNameInput?.value.toLowerCase().trim() || '';
+            
+            // If either name has changed significantly, remove the badge and is_self flag
+            if (expectedFirst && expectedLast) {
+                if (currentFirst !== expectedFirst || currentLast !== expectedLast) {
+                    badge.remove();
+                    const isSelfField = document.getElementById(`is_self_${formIndex}`);
+                    if (isSelfField) {
+                        isSelfField.value = 'false';
+                    }
+                    myselfAdded = false; // Allow adding self again to another form
+                    console.log(`Removed 'You' badge from form ${formIndex} - name changed`);
                 }
+            }
+        };
+        
+        // Remove existing listeners to avoid duplicates (using clone trick)
+        if (firstNameInput) {
+            firstNameInput.addEventListener('input', checkAndRemoveBadge);
+        }
+        if (lastNameInput) {
+            lastNameInput.addEventListener('input', checkAndRemoveBadge);
+        }
+    }
+    
+    function removeMyselfBadgeFromForm(formIndex) {
+        // Remove the "You" badge and is_self flag from a form
+        const containers = document.querySelectorAll('#passengerFormsContainer .passenger-form-container');
+        if (containers[formIndex]) {
+            const badge = containers[formIndex].querySelector('.myself-badge');
+            if (badge) {
+                badge.remove();
+                const isSelfField = document.getElementById(`is_self_${formIndex}`);
+                if (isSelfField) {
+                    isSelfField.value = 'false';
+                }
+                // Note: Don't reset myselfAdded here as the user might want to re-add themselves
+                console.log(`Removed 'You' badge from form ${formIndex}`);
             }
         }
     }
@@ -720,8 +820,95 @@
         if (!allValid) {
             alert('Please fill in all required fields.');
             e.preventDefault();
+            return;
+        }
+        
+        // Check for duplicate passengers (same passenger ID or same name + DOB)
+        const duplicateCheck = checkForDuplicatePassengers();
+        if (duplicateCheck.hasDuplicates) {
+            alert(duplicateCheck.message);
+            e.preventDefault();
+            return;
         }
     });
+    
+    // =================================================================
+    // Duplicate Passenger Detection
+    // =================================================================
+    function checkForDuplicatePassengers() {
+        const passengers = [];
+        
+        for (let i = 0; i < passengerCount; i++) {
+            const firstName = document.getElementById(`first_name_${i}`)?.value.trim().toLowerCase();
+            const lastName = document.getElementById(`last_name_${i}`)?.value.trim().toLowerCase();
+            const dob = document.getElementById(`date_of_birth_${i}`)?.value;
+            const existingPassengerId = document.getElementById(`existing_passenger_id_${i}`)?.value;
+            
+            if (!firstName || !lastName || !dob) continue; // Skip incomplete forms
+            
+            // Create a unique key for this passenger
+            const nameKey = `${firstName}|${lastName}|${dob}`;
+            
+            // Check for duplicate by passenger ID (if set)
+            if (existingPassengerId) {
+                const duplicateById = passengers.find(p => p.passengerId === existingPassengerId);
+                if (duplicateById) {
+                    return {
+                        hasDuplicates: true,
+                        message: `Duplicate detected: Passenger ${i + 1} and Passenger ${duplicateById.index + 1} are the same person (${firstName} ${lastName}). Each passenger can only be booked once per reservation.`
+                    };
+                }
+            }
+            
+            // Check for duplicate by name + DOB
+            const duplicateByName = passengers.find(p => p.nameKey === nameKey);
+            if (duplicateByName) {
+                return {
+                    hasDuplicates: true,
+                    message: `Duplicate detected: Passenger ${i + 1} and Passenger ${duplicateByName.index + 1} have the same name and date of birth (${firstName} ${lastName}). Each passenger can only be booked once per reservation.`
+                };
+            }
+            
+            passengers.push({
+                index: i,
+                nameKey: nameKey,
+                passengerId: existingPassengerId || null,
+                firstName: firstName,
+                lastName: lastName
+            });
+        }
+        
+        return { hasDuplicates: false };
+    }
+    
+    // Check if a passenger ID is already used in another form
+    function isPassengerIdAlreadyUsed(passengerId, excludeFormIndex) {
+        for (let i = 0; i < passengerCount; i++) {
+            if (i === excludeFormIndex) continue;
+            const existingId = document.getElementById(`existing_passenger_id_${i}`)?.value;
+            if (existingId && existingId === String(passengerId)) {
+                const firstName = document.getElementById(`first_name_${i}`)?.value || 'Unknown';
+                const lastName = document.getElementById(`last_name_${i}`)?.value || '';
+                return { used: true, formIndex: i, name: `${firstName} ${lastName}`.trim() };
+            }
+        }
+        return { used: false };
+    }
+    
+    // Check if name + DOB combination is already used
+    function isNameDobAlreadyUsed(firstName, lastName, dob, excludeFormIndex) {
+        const checkKey = `${firstName.toLowerCase()}|${lastName.toLowerCase()}|${dob}`;
+        for (let i = 0; i < passengerCount; i++) {
+            if (i === excludeFormIndex) continue;
+            const fn = document.getElementById(`first_name_${i}`)?.value.trim().toLowerCase();
+            const ln = document.getElementById(`last_name_${i}`)?.value.trim().toLowerCase();
+            const d = document.getElementById(`date_of_birth_${i}`)?.value;
+            if (fn && ln && d && `${fn}|${ln}|${d}` === checkKey) {
+                return { used: true, formIndex: i };
+            }
+        }
+        return { used: false };
+    }
 
     // Form validation on blur
     document.addEventListener('DOMContentLoaded', function() {
@@ -913,7 +1100,6 @@
                                     <th>Name</th>
                                     <th>Type</th>
                                     <th>Gender</th>
-                                    <th>Nationality</th>
                                     <th>DOB</th>
                                     <th>Last Trip</th>
                                     <th>Action</th>
@@ -1131,6 +1317,15 @@
             return;
         }
         
+        // Check if this family member is already added to another form
+        if (member.passengerId) {
+            const duplicateCheck = isPassengerIdAlreadyUsed(member.passengerId, -1);
+            if (duplicateCheck.used) {
+                alert(`This family member (${member.passenger.firstName} ${member.passenger.lastName}) is already added as Passenger ${duplicateCheck.formIndex + 1}. Each passenger can only be booked once per reservation.`);
+                return;
+            }
+        }
+        
         // Find an empty passenger form or use the current one
         const formIndex = findEmptyOrCurrentPassengerForm();
         
@@ -1159,6 +1354,9 @@
     
     function fillFamilyMemberForm(formIndex, member) {
         const pax = member.passenger;
+        
+        // Remove "You" badge if this form was previously marked as "myself"
+        removeMyselfBadgeFromForm(formIndex);
         
         // Store the existing passenger ID if available
         if (member.passengerId) {
@@ -1195,10 +1393,6 @@
             if (genderRadio) genderRadio.checked = true;
         }
         
-        // Nationality
-        const nationalityInput = document.getElementById(`nationality_${formIndex}`);
-        if (nationalityInput && pax.nationality) nationalityInput.value = pax.nationality;
-        
         // Passport Number
         const passportInput = document.getElementById(`passport_number_${formIndex}`);
         if (passportInput && pax.passportNum) passportInput.value = pax.passportNum;
@@ -1210,7 +1404,7 @@
     }
     
     function highlightFamilyForm(formIndex, member) {
-        const containers = document.querySelectorAll('.passenger-form-container');
+        const containers = document.querySelectorAll('#passengerFormsContainer .passenger-form-container');
         if (containers[formIndex]) {
             const header = containers[formIndex].querySelector('.passenger-header');
             if (header) {
@@ -1309,7 +1503,6 @@
                     </span>
                 </td>
                 <td>${pax.gender || '-'}</td>
-                <td>${pax.nationality || '-'}</td>
                 <td>${pax.dateOfBirth || '-'}</td>
                 <td>
                     <span class="trip-route">${lastTripText}</span>
@@ -1428,6 +1621,16 @@
     }
     
     function fillPassengerForm(formIndex, pax) {
+        // Check if this passenger is already added to another form
+        const duplicateCheck = isPassengerIdAlreadyUsed(pax.passengerId, formIndex);
+        if (duplicateCheck.used) {
+            showToast(`This passenger (${pax.firstName} ${pax.lastName}) is already added as Passenger ${duplicateCheck.formIndex + 1}. Each passenger can only be booked once.`, 'warning');
+            return false;
+        }
+        
+        // Remove "You" badge if this form was previously marked as "myself"
+        removeMyselfBadgeFromForm(formIndex);
+        
         // Title
         const titleSelect = document.getElementById(`title_${formIndex}`);
         if (titleSelect) titleSelect.value = pax.title || '';
@@ -1449,10 +1652,6 @@
             const genderRadio = document.querySelector(`input[name="gender_${formIndex}"][value="${pax.gender}"]`);
             if (genderRadio) genderRadio.checked = true;
         }
-        
-        // Nationality
-        const nationalityInput = document.getElementById(`nationality_${formIndex}`);
-        if (nationalityInput) nationalityInput.value = pax.nationality || 'Pakistani';
         
         // Passport Number
         const passportInput = document.getElementById(`passport_number_${formIndex}`);
@@ -1549,6 +1748,16 @@
             document.getElementById('lookupResultArea').classList.remove('d-none');
             
             if (response.ok && data.success) {
+                // Check if this passenger is already added to another form
+                const duplicateCheck = isPassengerIdAlreadyUsed(data.passengerId, parseInt(formIndex));
+                if (duplicateCheck.used) {
+                    document.getElementById('lookupSuccess').classList.add('d-none');
+                    document.getElementById('lookupError').classList.remove('d-none');
+                    document.getElementById('lookupErrorMessage').textContent = 
+                        `This passenger (${data.firstName} ${data.lastName}) is already added as Passenger ${duplicateCheck.formIndex + 1}. Each passenger can only be booked once per reservation.`;
+                    return;
+                }
+                
                 // Success - show success message and fill form
                 document.getElementById('lookupSuccess').classList.remove('d-none');
                 document.getElementById('lookupError').classList.add('d-none');
@@ -1585,6 +1794,9 @@
     }
     
     function fillPassengerFromLookup(formIndex, memberData) {
+        // Remove "You" badge if this form was previously marked as "myself"
+        removeMyselfBadgeFromForm(formIndex);
+        
         // Title
         const titleSelect = document.getElementById(`title_${formIndex}`);
         if (titleSelect && memberData.title) titleSelect.value = memberData.title;
@@ -1606,10 +1818,6 @@
             const genderRadio = document.querySelector(`input[name="gender_${formIndex}"][value="${memberData.gender}"]`);
             if (genderRadio) genderRadio.checked = true;
         }
-        
-        // Nationality
-        const nationalityInput = document.getElementById(`nationality_${formIndex}`);
-        if (nationalityInput && memberData.nationality) nationalityInput.value = memberData.nationality;
         
         // Passport Number
         const passportInput = document.getElementById(`passport_number_${formIndex}`);
@@ -1633,7 +1841,7 @@
     }
     
     function highlightLookedUpForm(formIndex, firstName, lastName) {
-        const containers = document.querySelectorAll('.passenger-form-container');
+        const containers = document.querySelectorAll('#passengerFormsContainer .passenger-form-container');
         if (containers[formIndex]) {
             const header = containers[formIndex].querySelector('.passenger-header h5');
             if (header) {

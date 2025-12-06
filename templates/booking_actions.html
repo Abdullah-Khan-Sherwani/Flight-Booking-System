@@ -68,9 +68,6 @@
                                     {% if reservation.title %}
                                     <span class="passenger-badge">{{ reservation.title }}</span>
                                     {% endif %}
-                                    {% if reservation.nationality %}
-                                    <span class="passenger-badge">{{ reservation.nationality }}</span>
-                                    {% endif %}
                                 </p>
                                 <p class="mb-1">
                                     <strong>Route:</strong> {{ reservation.departure_city }} ({{ reservation.departure_airport }}) → {{ reservation.arrival_city }} ({{ reservation.arrival_airport }})

@@ -735,9 +735,9 @@ BEGIN
             
             -- STEP 4: Create passenger (linked to user)
             BEGIN
-                INSERT INTO Passenger (Linked_User_ID, Title, First_Name, Last_Name, Gender, Nationality, Date_Of_Birth, Passport_Num)
+                INSERT INTO Passenger (Linked_User_ID, Title, First_Name, Last_Name, Gender, Date_Of_Birth, Passport_Num)
                 VALUES (user_id_var, title_var, users(user_index).first_name, users(user_index).last_name,
-                       users(user_index).gender, 'Pakistani', users(user_index).dob, users(user_index).passport)
+                       users(user_index).gender, users(user_index).dob, users(user_index).passport)
                 RETURNING Passenger_ID INTO passenger_id_var;
                 
                 DBMS_OUTPUT.PUT_LINE('Created passenger: ' || passenger_id_var);
