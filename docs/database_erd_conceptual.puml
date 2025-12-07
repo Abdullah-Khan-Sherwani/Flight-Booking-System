@@ -13,30 +13,26 @@ skinparam ranksep 100
 ' ============================================
 
 class Country {
-  + Country_ID [PK]
-  --
+  Country_ID
   Country_Name
 }
 
 class State_Province {
-  + State_ID [PK]
-  --
+  State_ID
   State_Name
 }
 
 class City {
-  + City_ID [PK]
-  --
+  City_ID
   City_Name
 }
 
 class Zip_Master {
-  + Zipcode [PK]
+  Zipcode
 }
 
 class Airport {
-  + Airport_ID [PK]
-  --
+  Airport_ID
   Airport_Name
 }
 
@@ -50,22 +46,19 @@ Zip_Master "1" -- "0..*" Airport : locates
 ' ============================================
 
 class Aircraft_Model {
-  + Model_ID [PK]
-  --
+  Model_ID
   Model_Name
   Manufacturer
 }
 
 class Travel_Class {
-  + Class_ID [PK]
-  --
+  Class_ID
   Class_Name
 }
 
 class Aircraft_Configuration {
-  + Model_ID [PK]
-  + Row_Number [PK]
-  --
+  Model_ID
+  Row_Number
   Seats_In_Row
 }
 
@@ -77,20 +70,17 @@ Travel_Class "1" -- "0..*" Aircraft_Configuration : defines
 ' ============================================
 
 class Flight_Route {
-  + Route_ID [PK]
-  --
+  Route_ID
   Base_Duration
 }
 
 class Flight_Service {
-  + Service_ID [PK]
-  --
+  Service_ID
   Service_Name
 }
 
 class Flight_Instance {
-  + Instance_ID [PK]
-  --
+  Instance_ID
   Departure_Time
   Arrival_Time
   Flight_Status
@@ -106,8 +96,8 @@ Aircraft_Model "1" -- "0..*" Flight_Instance : assigned
 ' PRICING & SERVICES (M:N)
 ' ============================================
 
-Flight_Route "0..*" -- "0..*" Travel_Class : << priced >>\n{Base_Price, Valid_From, Valid_To}
-Flight_Route "0..*" -- "0..*" Travel_Class : << offers services >>\n{Service_ID, Is_Complimentary}
+Flight_Route "0..*" -- "0..*" Travel_Class : priced
+Flight_Route "0..*" -- "0..*" Travel_Class : offers services
 Flight_Service "1" -- "0..*" Flight_Route : available
 
 ' ============================================
@@ -115,8 +105,7 @@ Flight_Service "1" -- "0..*" Flight_Route : available
 ' ============================================
 
 class App_User {
-  + User_ID [PK]
-  --
+  User_ID
   Email
   Password_Hash
   Phone_Number
@@ -124,8 +113,7 @@ class App_User {
 }
 
 class Passenger {
-  + Passenger_ID [PK]
-  --
+  Passenger_ID
   Title
   First_Name
   Last_Name
@@ -136,7 +124,7 @@ class Passenger {
 
 App_User "1" -- "0..1" Passenger : has profile
 Passenger "0..1" -- "0..*" Passenger : guardian for
-App_User "0..*" -- "0..*" App_User : << family >>\n{Relationship, Status}
+App_User "0..*" -- "0..*" App_User : family
 
 ' ============================================
 ' BOOKING & RESERVATION DOMAIN
@@ -144,7 +132,8 @@ App_User "0..*" -- "0..*" App_User : << family >>\n{Relationship, Status}
 
 class Booking {
   + Booking_ID [PK]
-  --
+class Booking {
+  Booking_ID
   Booking_Date
   Booking_Status
   Contact_Email
@@ -152,16 +141,14 @@ class Booking {
 }
 
 class Payment {
-  + Payment_ID [PK]
-  --
+  Payment_ID
   Amount_Paid
   Payment_Date
   Payment_Method
 }
 
 class Cancellation_Log {
-  + Log_ID [PK]
-  --
+  Log_ID
   Cancel_Date
   Reason
 }
@@ -175,6 +162,6 @@ Booking "1" -- "0..1" Cancellation_Log : may cancel
 ' ============================================
 
 Booking "0..*" -- "0..*" Passenger : includes
-Passenger "0..*" -- "0..*" Flight_Instance : << travels >>\n{Row_Number, Seat_Letter,\nPrice_Charged, Passenger_Type}
+Passenger "0..*" -- "0..*" Flight_Instance : travels
 
 @enduml

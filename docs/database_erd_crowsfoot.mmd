@@ -1,0 +1,216 @@
+erDiagram
+    %% =========================================================================
+    %% CONCEPTUAL ERD - Flight Booking System (Crow's Foot Notation)
+    %% =========================================================================
+    %% Using generic 'string' type to satisfy Mermaid syntax requirements
+    %% Focus on relationships and entity structure, not implementation types
+    %% =========================================================================
+
+    %% -------------------------------------------------------------------------
+    %% GEOGRAPHIC DOMAIN
+    %% -------------------------------------------------------------------------
+
+    COUNTRY {
+        string Country_ID PK
+        string Country_Name
+    }
+
+    STATE_PROVINCE {
+        string State_ID PK
+        string State_Name
+        string Country_ID FK
+    }
+
+    CITY {
+        string City_ID PK
+        string City_Name
+        string State_ID FK
+    }
+
+    ZIP_MASTER {
+        string Zipcode PK
+        string City_ID FK
+    }
+
+    AIRPORT {
+        string Airport_ID PK
+        string Airport_Name
+        string Zipcode FK
+    }
+
+    %% Geographic Hierarchy (1:Many)
+    COUNTRY ||--o{ STATE_PROVINCE : contains
+    STATE_PROVINCE ||--o{ CITY : contains
+    CITY ||--o{ ZIP_MASTER : has
+    ZIP_MASTER ||--o{ AIRPORT : locates
+
+    %% -------------------------------------------------------------------------
+    %% AIRCRAFT CONFIGURATION DOMAIN
+    %% -------------------------------------------------------------------------
+
+    AIRCRAFT_MODEL {
+        string Model_ID PK
+        string Model_Name
+        string Manufacturer
+    }
+
+    TRAVEL_CLASS {
+        string Class_ID PK
+        string Class_Name
+    }
+
+    AIRCRAFT_CONFIGURATION {
+        string Model_ID PK
+        string Row_Number PK
+        string Class_ID FK
+        string Seats_In_Row
+    }
+
+    AIRCRAFT_MODEL ||--o{ AIRCRAFT_CONFIGURATION : "has rows"
+    TRAVEL_CLASS ||--o{ AIRCRAFT_CONFIGURATION : defines
+
+    %% -------------------------------------------------------------------------
+    %% FLIGHT OPERATIONS DOMAIN
+    %% -------------------------------------------------------------------------
+
+    FLIGHT_ROUTE {
+        string Route_ID PK
+        string Source_Airport FK
+        string Dest_Airport FK
+        string Base_Duration
+    }
+
+    FLIGHT_SERVICE {
+        string Service_ID PK
+        string Service_Name
+    }
+
+    FLIGHT_INSTANCE {
+        string Instance_ID PK
+        string Route_ID FK
+        string Model_ID FK
+        string Departure_Time
+        string Arrival_Time
+        string Flight_Status
+        string Price_Multiplier
+    }
+
+    %% Route relationships
+    AIRPORT ||--o{ FLIGHT_ROUTE : "origin of"
+    AIRPORT ||--o{ FLIGHT_ROUTE : "destination of"
+
+    %% Flight hierarchy
+    FLIGHT_ROUTE ||--o{ FLIGHT_INSTANCE : "operates as"
+    AIRCRAFT_MODEL ||--o{ FLIGHT_INSTANCE : "assigned to"
+
+    %% -------------------------------------------------------------------------
+    %% PRICING DOMAIN (Many-to-Many via Route_Pricing)
+    %% -------------------------------------------------------------------------
+    %% Conceptual M:N: Route-Class Pricing
+    %% Physical: Route_Pricing table with Base_Price, Valid_From, Valid_To
+    
+    FLIGHT_ROUTE }o--o{ TRAVEL_CLASS : "has pricing"
+
+    %% -------------------------------------------------------------------------
+    %% SERVICE OFFERING DOMAIN (Many-to-Many)
+    %% -------------------------------------------------------------------------
+    %% Conceptual M:N: Route-Class Services
+    %% Physical: Service_Offering with Service_ID, Is_Complimentary, Cost
+
+    FLIGHT_SERVICE ||--o{ FLIGHT_ROUTE : "available on"
+
+    %% -------------------------------------------------------------------------
+    %% USER & AUTHENTICATION DOMAIN
+    %% -------------------------------------------------------------------------
+
+    APP_USER {
+        string User_ID PK
+        string Email
+        string Password_Hash
+        string Phone_Number
+        string Created_At
+    }
+
+    %% -------------------------------------------------------------------------
+    %% PASSENGER DOMAIN
+    %% -------------------------------------------------------------------------
+
+    PASSENGER {
+        string Passenger_ID PK
+        string Linked_User_ID FK
+        string Title
+        string First_Name
+        string Last_Name
+        string Gender
+        string Date_Of_Birth
+        string Passport_Num
+    }
+
+    %% User-Passenger relationship (optional link)
+    APP_USER ||--o| PASSENGER : "has profile"
+
+    %% Self-reference: Guardian for infant
+    PASSENGER ||--o{ PASSENGER : "guardian for"
+
+    %% Family network (Many-to-Many via User_Family)
+    APP_USER }o--o{ APP_USER : "family member"
+
+    %% -------------------------------------------------------------------------
+    %% BOOKING & RESERVATION DOMAIN
+    %% -------------------------------------------------------------------------
+
+    BOOKING {
+        string Booking_ID PK
+        string Lead_User_ID FK
+        string Booking_Date
+        string Booking_Status
+        string Contact_Email
+        string Emergency_Phone
+    }
+
+    PAYMENT {
+        string Payment_ID PK
+        string Booking_ID FK
+        string Amount_Paid
+        string Payment_Date
+        string Payment_Method
+    }
+
+    CANCELLATION_LOG {
+        string Log_ID PK
+        string Booking_ID FK
+        string Cancel_Date
+        string Reason
+    }
+
+    %% Booking relationships
+    APP_USER ||--o{ BOOKING : makes
+    BOOKING ||--|| PAYMENT : "paid via"
+    BOOKING ||--o| CANCELLATION_LOG : "may cancel"
+
+    %% -------------------------------------------------------------------------
+    %% CORE MANY-TO-MANY RELATIONSHIPS (Reservation Bridge Dissolved)
+    %% -------------------------------------------------------------------------
+    
+    %% Booking includes multiple Passengers (Many-to-Many)
+    BOOKING }o--o{ PASSENGER : includes
+
+    %% Passenger travels on Flights (Many-to-Many)
+    %% Physical: Reservation table with Seat_Number, Price_Charged, Passenger_Type
+    PASSENGER }o--o{ FLIGHT_INSTANCE : "travels on"
+
+    %% =========================================================================
+    %% LEGEND - Crow's Foot Notation
+    %% =========================================================================
+    %% ||--||  : One-to-One (exactly one)
+    %% ||--o|  : One-to-Zero-or-One (optional)
+    %% ||--o{  : One-to-Many (zero or more)
+    %% }o--o{  : Many-to-Many (zero or more on both sides)
+    %% 
+    %% CONCEPTUAL MODEL NOTES:
+    %% - All attributes use 'string' type (Mermaid syntax requirement)
+    %% - Focus is on entities and relationships, not implementation types
+    %% - M:N relationships shown directly without junction tables
+    %% - Bridge tables dissolved: Route_Pricing, Service_Offering, Reservation, User_Family
+    %% - Aircraft_Configuration kept as entity (represents physical configuration)
+    %% =========================================================================
