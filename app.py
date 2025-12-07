@@ -1,4 +1,39 @@
 # app.py
+"""
+IAT Airlines Flight Booking System - Main Application
+
+This application uses the following Oracle database objects from database-3NF.sql:
+
+=== SEQUENCES (Auto-generated IDs) ===
+- Passenger_Seq: Generates unique Passenger_ID values
+- Reservation_Seq: Generates ticket numbers in format IAT-YYYYMMDD-NNNNNN
+- Booking_Seq: Used by Generate_PNR function for booking IDs
+
+=== FUNCTIONS ===
+- Generate_PNR(): Generates random 6-character alphanumeric booking ID (used by TRG_Generate_Booking_PNR)
+- FN_Get_Infant_Type(booking_id, instance_id, passenger_id): Determines LAP_INFANT vs SEATED_INFANT
+- FN_Get_Infant_Price(instance_id, infant_type, class_id): Calculates infant pricing (0 or 50%)
+- FN_Calculate_Refund(instance_id, price_charged): Calculates refund based on hours until departure
+
+=== STORED PROCEDURES ===
+- USP_Make_Reservation: Smart booking with auto-seat assignment (available but using direct inserts)
+- USP_Delete_User_Account: Cascading delete for user account and all related data
+- USP_Cancel_Reservation: Cancel reservation with automatic refund calculation
+
+=== TRIGGERS (Automatically fired) ===
+- TRG_Generate_Booking_PNR: Auto-generates 6-char booking ID on INSERT into Booking
+- TRG_Validate_Seat_Exists: Validates seat exists on aircraft before reservation
+- TRG_Infant_Booking_Rules: Enforces infant booking rules and auto-calculates prices
+- TRG_Auto_Cancel_Booking: Updates Booking.Booking_Status when all reservations cancelled
+- TRG_Auto_Log_Booking_Cancellation: Logs to Cancellation_Log when booking cancelled
+- TRG_Auto_Reciprocal_Family: Creates reciprocal family relationship on ACCEPT
+
+=== VIEWS ===
+- View_Flight_Availability: Shows total capacity, booked seats, and remaining seats per flight
+- View_Booking_Infant_Summary: Summarizes bookings with adult/lap-infant/seated-infant counts
+- View_Past_Passengers: Returns passengers previously booked by a lead user with trip history
+"""
+
 from flask import Flask, render_template, request, redirect, session, jsonify, url_for, send_file
 from db import get_connection
 from datetime import datetime, timedelta
@@ -568,7 +603,7 @@ def search_flights_get():
         }
         travel_class_name = class_names.get(travel_class, travel_class)
 
-        # Get flights using new schema - UPDATED FOR NEW SCHEMA
+        # Get flights using View_Flight_Availability for efficient seat availability
         query = """
             SELECT fi.Instance_ID,
                    fr.Source_Airport,
@@ -580,8 +615,7 @@ def search_flights_get():
                    a2.Airport_Name AS Dest_Airport_Name,
                    c1.City_Name AS Source_City,
                    c2.City_Name AS Dest_City,
-                   (SELECT COUNT(*) FROM Aircraft_Seat_Map WHERE Model_ID = fi.Model_ID) - 
-                   (SELECT COUNT(*) FROM Reservation WHERE Instance_ID = fi.Instance_ID AND Row_Number IS NOT NULL) as Seats_Remaining
+                   vfa.Seats_Remaining
             FROM Flight_Instance fi
             JOIN Flight_Route fr ON fi.Route_ID = fr.Route_ID
             JOIN Airport a1 ON fr.Source_Airport = a1.Airport_ID
@@ -590,6 +624,7 @@ def search_flights_get():
             JOIN Zip_Master zm2 ON a2.Zipcode = zm2.Zipcode
             JOIN City c1 ON zm1.City_ID = c1.City_ID
             JOIN City c2 ON zm2.City_ID = c2.City_ID
+            JOIN View_Flight_Availability vfa ON fi.Instance_ID = vfa.Instance_ID
             WHERE fr.Source_Airport = :src
               AND fr.Dest_Airport = :dest
               AND TRUNC(fi.Departure_Time) = TO_DATE(:dep_date, 'YYYY-MM-DD')
@@ -669,7 +704,7 @@ def search_flights():
         }
         travel_class_name = class_names.get(travel_class, travel_class)
 
-        # Get flights using new schema - UPDATED FOR NEW SCHEMA
+        # Get flights using View_Flight_Availability for efficient seat availability
         query = """
             SELECT fi.Instance_ID,
                    fr.Source_Airport,
@@ -681,8 +716,7 @@ def search_flights():
                    a2.Airport_Name AS Dest_Airport_Name,
                    c1.City_Name AS Source_City,
                    c2.City_Name AS Dest_City,
-                   (SELECT COUNT(*) FROM Aircraft_Seat_Map WHERE Model_ID = fi.Model_ID) - 
-                   (SELECT COUNT(*) FROM Reservation WHERE Instance_ID = fi.Instance_ID AND Row_Number IS NOT NULL) as Seats_Remaining
+                   vfa.Seats_Remaining
             FROM Flight_Instance fi
             JOIN Flight_Route fr ON fi.Route_ID = fr.Route_ID
             JOIN Airport a1 ON fr.Source_Airport = a1.Airport_ID
@@ -691,6 +725,7 @@ def search_flights():
             JOIN Zip_Master zm2 ON a2.Zipcode = zm2.Zipcode
             JOIN City c1 ON zm1.City_ID = c1.City_ID
             JOIN City c2 ON zm2.City_ID = c2.City_ID
+            JOIN View_Flight_Availability vfa ON fi.Instance_ID = vfa.Instance_ID
             WHERE fr.Source_Airport = :src
               AND fr.Dest_Airport = :dest
               AND TRUNC(fi.Departure_Time) = TO_DATE(:dep_date, 'YYYY-MM-DD')
@@ -723,6 +758,12 @@ def search_flights():
 @app.route('/select-flight/<flight_id>')
 def select_flight(flight_id):
     # No login check - allow guests to select flights
+    
+    # Check if this is a reschedule operation - redirect to reschedule flow
+    reschedule_context = session.get('reschedule_context')
+    if reschedule_context or session.get('reschedule_reservation_ids'):
+        return redirect(url_for('select_reschedule_flight', flight_id=flight_id))
+    
     trip_type = request.args.get('trip_type') or session.get('search_trip_type', 'one_way')
     travel_class = request.args.get('travel_class') or session.get('search_travel_class', 'ECO')
     
@@ -734,11 +775,11 @@ def select_flight(flight_id):
     print(f"DEBUG - Setting session travel_class: {travel_class}")
     print(f"DEBUG - Setting session trip_type: {trip_type}")
     
-    # ✅ FIXED: Redirect to passenger info instead of seat selection
+    # Redirect to passenger info for normal booking
     if session['trip_type'] == 'round_trip':
         return redirect('/return-flight-search')
     else:
-        return redirect('/passenger-info')  # ✅ CHANGED TO PASSENGER INFO
+        return redirect('/passenger-info')
 
 @app.route('/return-flight-search', methods=['GET', 'POST'])
 def return_flight_search():
@@ -771,7 +812,7 @@ def return_flight_search():
             
             print(f"Searching return flights: {return_departure} to {return_arrival} on {return_date}")
             
-            # Search for return flights - UPDATED FOR NEW SCHEMA
+            # Search for return flights using View_Flight_Availability
             query = """
                 SELECT fi.Instance_ID,
                        fr.Source_Airport,
@@ -783,8 +824,7 @@ def return_flight_search():
                        a2.Airport_Name AS Dest_Airport_Name,
                        c1.City_Name AS Source_City,
                        c2.City_Name AS Dest_City,
-                       (SELECT COUNT(*) FROM Aircraft_Seat_Map WHERE Model_ID = fi.Model_ID) - 
-                       (SELECT COUNT(*) FROM Reservation WHERE Instance_ID = fi.Instance_ID AND Row_Number IS NOT NULL) as Seats_Remaining
+                       vfa.Seats_Remaining
                 FROM Flight_Instance fi
                 JOIN Flight_Route fr ON fi.Route_ID = fr.Route_ID
                 JOIN Airport a1 ON fr.Source_Airport = a1.Airport_ID
@@ -793,6 +833,7 @@ def return_flight_search():
                 JOIN Zip_Master zm2 ON a2.Zipcode = zm2.Zipcode
                 JOIN City c1 ON zm1.City_ID = c1.City_ID
                 JOIN City c2 ON zm2.City_ID = c2.City_ID
+                JOIN View_Flight_Availability vfa ON fi.Instance_ID = vfa.Instance_ID
                 WHERE fr.Source_Airport = :src
                   AND fr.Dest_Airport = :dest
                   AND TRUNC(fi.Departure_Time) = TO_DATE(:dep_date, 'YYYY-MM-DD')
@@ -827,19 +868,21 @@ def seat_selection():
     # No login check - allow guests to select seats
     # Check if this is a reschedule operation
     reschedule_reservation_id = session.get('reschedule_reservation_id')
+    is_reschedule = session.get('is_reschedule', False)
     
-    if reschedule_reservation_id:
+    if reschedule_reservation_id or is_reschedule:
         # This is a reschedule flow - use the reschedule flight
-        flight_id = session.get('reschedule_new_flight')
+        flight_id = session.get('reschedule_new_flight') or session.get('selected_outbound_flight')
         if not flight_id:
             return render_template('error.html', error="Reschedule flight not found")
-        # Set other parameters as needed
-        session['travel_class'] = session.get('search_travel_class', 'ECO')
-        session['passengers'] = 1  # Reschedule is per reservation
+        
+        # Use pre-filled data from select_reschedule_flight
+        # Travel class, passengers, and passenger_data are already set
+        travel_class = session.get('travel_class', session.get('reschedule_travel_class', 'ECO'))
+        passengers = session.get('passengers', len(session.get('reschedule_passenger_data', [])))
+        
         session['trip_type'] = 'one_way'
         session['selected_outbound_flight'] = flight_id
-        
-        # Store that this is a reschedule operation
         session['is_reschedule'] = True
     else:
         # Normal booking flow
@@ -855,7 +898,7 @@ def seat_selection():
     print(f"DEBUG - travel_class from session: {travel_class}")
     print(f"DEBUG - passengers: {passengers}")
     print(f"DEBUG - trip_type: {trip_type}")
-    print(f"DEBUG - Reschedule mode: {reschedule_reservation_id is not None}")
+    print(f"DEBUG - Reschedule mode: {reschedule_reservation_id is not None or is_reschedule}")
     print(f"DEBUG - Flight ID: {flight_id}")
     
     conn = get_connection()
@@ -1210,6 +1253,7 @@ def api_my_profile():
 def api_past_passengers():
     """
     Get passengers previously booked by the current logged-in user.
+    Uses View_Past_Passengers for efficient querying.
     Excludes the user's own passenger profile (Linked_User_ID = current user).
     Returns JSON with passenger details and recent trip history.
     """
@@ -1222,25 +1266,23 @@ def api_past_passengers():
     cursor = conn.cursor()
     
     try:
-        # Query past passengers with their most recent trips
-        # Uses direct joins (View_Past_Passengers can be used alternatively)
+        # Query past passengers using View_Past_Passengers
+        # The view filters only bookings by logged-in users and provides all needed data
         cursor.execute("""
             SELECT DISTINCT
-                p.Passenger_ID,
-                p.Title,
-                p.First_Name,
-                p.Last_Name,
-                p.Gender,
-                TO_CHAR(p.Date_Of_Birth, 'YYYY-MM-DD') AS Date_Of_Birth,
-                p.Passport_Num,
-                p.Linked_User_ID,
-                CASE WHEN p.Linked_User_ID IS NOT NULL THEN 1 ELSE 0 END AS Is_Registered
-            FROM Passenger p
-            JOIN Reservation r ON p.Passenger_ID = r.Passenger_ID
-            JOIN Booking b ON r.Booking_ID = b.Booking_ID
-            WHERE b.Lead_User_ID = :user_id
-              AND (p.Linked_User_ID IS NULL OR p.Linked_User_ID != :user_id)
-            ORDER BY p.First_Name, p.Last_Name
+                Passenger_ID,
+                Title,
+                First_Name,
+                Last_Name,
+                Gender,
+                TO_CHAR(Date_Of_Birth, 'YYYY-MM-DD') AS Date_Of_Birth,
+                Passport_Num,
+                Linked_User_ID,
+                Is_Registered_User
+            FROM View_Past_Passengers
+            WHERE Lead_User_ID = :user_id
+              AND (Linked_User_ID IS NULL OR Linked_User_ID != :user_id)
+            ORDER BY First_Name, Last_Name
         """, user_id=user_id)
         
         passengers_raw = cursor.fetchall()
@@ -1253,32 +1295,27 @@ def api_past_passengers():
         for pax in passengers_raw:
             passenger_id = pax[0]
             
-            # Get recent trips for this passenger (booked by this lead user)
+            # Get recent trips for this passenger using View_Past_Passengers
             cursor.execute("""
                 SELECT 
-                    b.Booking_ID,
-                    r.Reservation_ID,
-                    fi.Instance_ID,
-                    fr.Source_Airport,
-                    fr.Dest_Airport,
-                    dep_apt.Airport_Name AS From_Airport,
-                    arr_apt.Airport_Name AS To_Airport,
-                    TO_CHAR(fi.Departure_Time, 'YYYY-MM-DD"T"HH24:MI:SS') AS Departure_Time,
-                    TO_CHAR(fi.Arrival_Time, 'YYYY-MM-DD"T"HH24:MI:SS') AS Arrival_Time,
-                    r.Row_Number,
-                    r.Seat_Letter,
-                    r.Ticket_Status,
-                    r.Price_Charged,
-                    r.Passenger_Type
-                FROM Reservation r
-                JOIN Booking b ON r.Booking_ID = b.Booking_ID
-                JOIN Flight_Instance fi ON r.Instance_ID = fi.Instance_ID
-                JOIN Flight_Route fr ON fi.Route_ID = fr.Route_ID
-                JOIN Airport dep_apt ON fr.Source_Airport = dep_apt.Airport_ID
-                JOIN Airport arr_apt ON fr.Dest_Airport = arr_apt.Airport_ID
-                WHERE r.Passenger_ID = :passenger_id
-                  AND b.Lead_User_ID = :user_id
-                ORDER BY fi.Departure_Time DESC
+                    Booking_ID,
+                    Reservation_ID,
+                    Instance_ID,
+                    Source_Airport,
+                    Dest_Airport,
+                    Departure_Airport_Name AS From_Airport,
+                    Arrival_Airport_Name AS To_Airport,
+                    TO_CHAR(Departure_Time, 'YYYY-MM-DD"T"HH24:MI:SS') AS Departure_Time,
+                    TO_CHAR(Arrival_Time, 'YYYY-MM-DD"T"HH24:MI:SS') AS Arrival_Time,
+                    Row_Number,
+                    Seat_Letter,
+                    Ticket_Status,
+                    Price_Charged,
+                    Passenger_Type
+                FROM View_Past_Passengers
+                WHERE Passenger_ID = :passenger_id
+                  AND Lead_User_ID = :user_id
+                ORDER BY Departure_Time DESC
                 FETCH FIRST 5 ROWS ONLY
             """, passenger_id=passenger_id, user_id=user_id)
             
@@ -1722,6 +1759,86 @@ def api_family_remove():
         conn.rollback()
         print(f"Error removing family member: {e}")
         return jsonify({'error': 'Failed to remove family member'}), 500
+        
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# =============================================================================
+# API: Booking Summary with Infant Breakdown (uses View_Booking_Infant_Summary)
+# =============================================================================
+
+@app.route('/api/bookings/<booking_id>/summary')
+def api_booking_summary(booking_id):
+    """
+    Get booking summary with infant breakdown using View_Booking_Infant_Summary.
+    Returns:
+    - Adult count, Lap infant count, Seated infant count
+    - Total price and paid amount breakdown
+    - Flight details for each flight in the booking
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Use View_Booking_Infant_Summary for efficient infant breakdown
+        cursor.execute("""
+            SELECT 
+                Booking_ID,
+                Contact_Email,
+                Instance_ID,
+                Adult_Count,
+                Lap_Infant_Count,
+                Seated_Infant_Count,
+                Total_Price,
+                Paid_Amount
+            FROM View_Booking_Infant_Summary
+            WHERE Booking_ID = :booking_id
+        """, booking_id=booking_id)
+        
+        summaries = cursor.fetchall()
+        
+        if not summaries:
+            return jsonify({'error': 'Booking not found'}), 404
+        
+        # Build response with summary per flight
+        flights = []
+        total_adults = 0
+        total_lap_infants = 0
+        total_seated_infants = 0
+        grand_total = 0
+        
+        for summary in summaries:
+            flights.append({
+                'instanceId': summary[2],
+                'adultCount': summary[3],
+                'lapInfantCount': summary[4],
+                'seatedInfantCount': summary[5],
+                'totalPrice': float(summary[6]) if summary[6] else 0,
+                'paidAmount': float(summary[7]) if summary[7] else 0
+            })
+            total_adults += summary[3] or 0
+            total_lap_infants += summary[4] or 0
+            total_seated_infants += summary[5] or 0
+            grand_total += float(summary[6]) if summary[6] else 0
+        
+        return jsonify({
+            'bookingId': booking_id,
+            'contactEmail': summaries[0][1],
+            'summary': {
+                'totalAdults': total_adults,
+                'totalLapInfants': total_lap_infants,
+                'totalSeatedInfants': total_seated_infants,
+                'totalPassengers': total_adults + total_lap_infants + total_seated_infants,
+                'grandTotal': grand_total
+            },
+            'flights': flights
+        })
+        
+    except Exception as e:
+        print(f"Error getting booking summary: {e}")
+        return jsonify({'error': 'Failed to get booking summary'}), 500
         
     finally:
         cursor.close()
@@ -2243,7 +2360,23 @@ def process_booking():
             
             # =================================================================
             # Insert passengers with proper is_self and existing_passenger_id handling
+            # IMPORTANT: If user modifies auto-filled details, create NEW passenger
+            # to avoid corrupting stored profiles (own or family members')
             # =================================================================
+            
+            def details_match(stored, submitted):
+                """Compare stored passenger data with submitted form data.
+                Returns True if key identity fields match (allowing passport updates)."""
+                # stored = (Passenger_ID, Title, First_Name, Last_Name, Gender, DOB_str, Passport)
+                # Check key identity fields - name, gender, DOB must match exactly
+                name_match = (stored[2].upper() == submitted['first_name'].upper() and 
+                             stored[3].upper() == submitted['last_name'].upper())
+                gender_match = stored[4].upper() == submitted['gender'].upper()
+                # DOB comparison - stored is 'YYYY-MM-DD' string
+                dob_match = stored[5] == submitted['date_of_birth']
+                
+                return name_match and gender_match and dob_match
+            
             passenger_ids = []
             for i, passenger in enumerate(passenger_data):
                 print(f"DEBUG - Processing passenger {i}: {passenger['first_name']} {passenger['last_name']} (Title: {passenger['title']})")
@@ -2255,66 +2388,117 @@ def process_booking():
                 
                 print(f"DEBUG - is_self={is_self}, existing_id={existing_passenger_id}, is_infant={is_infant}")
                 
-                # CASE 1: Reuse existing passenger (from "Add from Past Bookings" or "Add Myself" with existing profile)
+                # CASE 1: existing_passenger_id provided (from "Add from Past Bookings" or "Add Myself")
+                # Check if details were MODIFIED - if so, create NEW passenger instead of updating
                 if existing_passenger_id:
-                    passenger_id = existing_passenger_id
-                    print(f"DEBUG - Reusing existing passenger ID: {passenger_id}")
-                    
-                    # Update passenger details in case they changed
+                    # Fetch the stored passenger details to compare
                     cursor.execute("""
-                        UPDATE Passenger SET
-                            First_Name = :first_name,
-                            Last_Name = :last_name,
-                            Date_Of_Birth = TO_DATE(:dob, 'YYYY-MM-DD'),
-                            Gender = :gender,
-                            Passport_Num = :passport,
-                            Title = :title
-                        WHERE Passenger_ID = :pid
-                    """,
-                    first_name=passenger['first_name'],
-                    last_name=passenger['last_name'],
-                    dob=passenger['date_of_birth'],
-                    gender=passenger['gender'],
-                    passport=passenger['passport_number'],
-                    title=passenger['title'],
-                    pid=passenger_id)
+                        SELECT Passenger_ID, Title, First_Name, Last_Name, Gender, 
+                               TO_CHAR(Date_Of_Birth, 'YYYY-MM-DD'), Passport_Num
+                        FROM Passenger WHERE Passenger_ID = :pid
+                    """, pid=existing_passenger_id)
+                    stored_data = cursor.fetchone()
                     
-                    passenger_ids.append(passenger_id)
+                    if stored_data and details_match(stored_data, passenger):
+                        # Details UNCHANGED - safe to reuse existing passenger
+                        passenger_id = existing_passenger_id
+                        print(f"DEBUG - Details unchanged, reusing existing passenger ID: {passenger_id}")
+                        
+                        # Only update passport if it changed (minor update allowed)
+                        if stored_data[6] != passenger['passport_number']:
+                            cursor.execute("""
+                                UPDATE Passenger SET Passport_Num = :passport
+                                WHERE Passenger_ID = :pid
+                            """, passport=passenger['passport_number'], pid=passenger_id)
+                            print(f"DEBUG - Updated passport for passenger {passenger_id}")
+                        
+                        passenger_ids.append(passenger_id)
+                    else:
+                        # Details MODIFIED - create NEW passenger to avoid corrupting stored profile
+                        print(f"DEBUG - Details modified from stored profile, creating NEW passenger")
+                        cursor.execute("""
+                            INSERT INTO Passenger 
+                            (First_Name, Last_Name, Date_Of_Birth, Gender, Passport_Num, Title)
+                            VALUES (:first_name, :last_name, TO_DATE(:dob, 'YYYY-MM-DD'), :gender, :passport, :title)
+                        """, 
+                        first_name=passenger['first_name'],
+                        last_name=passenger['last_name'],
+                        dob=passenger['date_of_birth'],
+                        gender=passenger['gender'],
+                        passport=passenger['passport_number'],
+                        title=passenger['title'])
+                        
+                        # Get the new passenger ID
+                        cursor.execute("""
+                            SELECT Passenger_ID FROM Passenger 
+                            WHERE First_Name = :first_name 
+                            AND Last_Name = :last_name 
+                            AND Date_Of_Birth = TO_DATE(:dob, 'YYYY-MM-DD')
+                            ORDER BY Passenger_ID DESC
+                            FETCH FIRST 1 ROW ONLY
+                        """, 
+                        first_name=passenger['first_name'], 
+                        last_name=passenger['last_name'], 
+                        dob=passenger['date_of_birth'])
+                        new_passenger = cursor.fetchone()
+                        passenger_ids.append(new_passenger[0])
+                        print(f"DEBUG - Created new passenger ID: {new_passenger[0]} (original was {existing_passenger_id})")
                     
                 # CASE 2: User clicked "Add Myself" but doesn't have existing profile
                 # AND the passenger is NOT an infant (infants should never be linked to users)
                 elif is_self and lead_user_id and not is_infant:
                     # Check if user already has a linked passenger profile
                     cursor.execute("""
-                        SELECT Passenger_ID FROM Passenger WHERE Linked_User_ID = :user_id
+                        SELECT Passenger_ID, Title, First_Name, Last_Name, Gender,
+                               TO_CHAR(Date_Of_Birth, 'YYYY-MM-DD'), Passport_Num
+                        FROM Passenger WHERE Linked_User_ID = :user_id
                     """, user_id=lead_user_id)
                     existing_linked = cursor.fetchone()
                     
                     if existing_linked:
-                        # User already has a profile - reuse it
-                        passenger_id = existing_linked[0]
-                        print(f"DEBUG - Found existing linked profile for user {lead_user_id}: {passenger_id}")
-                        
-                        # Update the profile with current details
-                        cursor.execute("""
-                            UPDATE Passenger SET
-                                First_Name = :first_name,
-                                Last_Name = :last_name,
-                                Date_Of_Birth = TO_DATE(:dob, 'YYYY-MM-DD'),
-                                Gender = :gender,
-                                Passport_Num = :passport,
-                                Title = :title
-                            WHERE Passenger_ID = :pid
-                        """,
-                        first_name=passenger['first_name'],
-                        last_name=passenger['last_name'],
-                        dob=passenger['date_of_birth'],
-                        gender=passenger['gender'],
-                        passport=passenger['passport_number'],
-                        title=passenger['title'],
-                        pid=passenger_id)
-                        
-                        passenger_ids.append(passenger_id)
+                        # User has a profile - check if details match
+                        if details_match(existing_linked, passenger):
+                            # Details match - reuse existing profile
+                            passenger_id = existing_linked[0]
+                            print(f"DEBUG - Details match linked profile, reusing passenger ID: {passenger_id}")
+                            
+                            # Only update passport if changed
+                            if existing_linked[6] != passenger['passport_number']:
+                                cursor.execute("""
+                                    UPDATE Passenger SET Passport_Num = :passport
+                                    WHERE Passenger_ID = :pid
+                                """, passport=passenger['passport_number'], pid=passenger_id)
+                            
+                            passenger_ids.append(passenger_id)
+                        else:
+                            # Details modified - create NEW unlinked passenger
+                            print(f"DEBUG - Details modified from linked profile, creating NEW passenger")
+                            cursor.execute("""
+                                INSERT INTO Passenger 
+                                (First_Name, Last_Name, Date_Of_Birth, Gender, Passport_Num, Title)
+                                VALUES (:first_name, :last_name, TO_DATE(:dob, 'YYYY-MM-DD'), :gender, :passport, :title)
+                            """, 
+                            first_name=passenger['first_name'],
+                            last_name=passenger['last_name'],
+                            dob=passenger['date_of_birth'],
+                            gender=passenger['gender'],
+                            passport=passenger['passport_number'],
+                            title=passenger['title'])
+                            
+                            cursor.execute("""
+                                SELECT Passenger_ID FROM Passenger 
+                                WHERE First_Name = :first_name 
+                                AND Last_Name = :last_name 
+                                AND Date_Of_Birth = TO_DATE(:dob, 'YYYY-MM-DD')
+                                ORDER BY Passenger_ID DESC
+                                FETCH FIRST 1 ROW ONLY
+                            """, 
+                            first_name=passenger['first_name'], 
+                            last_name=passenger['last_name'], 
+                            dob=passenger['date_of_birth'])
+                            new_passenger = cursor.fetchone()
+                            passenger_ids.append(new_passenger[0])
+                            print(f"DEBUG - Created new passenger ID: {new_passenger[0]}")
                     else:
                         # Create new profile linked to user
                         print(f"DEBUG - Creating NEW passenger profile linked to user {lead_user_id}")
@@ -2371,13 +2555,12 @@ def process_booking():
             
             # =================================================================
             # Create reservations for outbound flight
+            # Uses FN_Get_Infant_Type for database-side infant type determination
+            # SQL triggers handle price calculation automatically
             # =================================================================
             # Track seat index for passengers needing seats (adults + seated infants)
             seat_index = 0
             actual_outbound_seats = [s for s in selected_outbound_seats if s != 'INFANT']
-            
-            # Track lap infant count to determine which infants get lap vs seat
-            lap_infant_counter = 0
             
             for i, passenger in enumerate(passenger_data):
                 passenger_id = passenger_ids[i]
@@ -2386,12 +2569,17 @@ def process_booking():
                 res_id = generate_reservation_id(cursor)
                 
                 if is_infant:
-                    # Determine if this infant gets lap (free) or seat (50% price)
-                    if lap_infant_counter < adult_count:
-                        # LAP_INFANT: free, no seat - SQL trigger sets Price_Charged = 0
-                        passenger_type = 'LAP_INFANT'
-                        lap_infant_counter += 1
-                        
+                    # Use FN_Get_Infant_Type to determine LAP_INFANT vs SEATED_INFANT
+                    # This function uses database logic: 1 lap infant per adult, extras need seats
+                    cursor.execute("""
+                        SELECT FN_Get_Infant_Type(:booking_id, :instance_id, :passenger_id) FROM DUAL
+                    """, booking_id=booking_id, instance_id=outbound_flight_id, passenger_id=passenger_id)
+                    passenger_type = cursor.fetchone()[0]
+                    
+                    print(f"DEBUG - FN_Get_Infant_Type returned: {passenger_type} for passenger {passenger_id}")
+                    
+                    if passenger_type == 'LAP_INFANT':
+                        # LAP_INFANT: free, no seat - SQL trigger TRG_Infant_Booking_Rules sets Price_Charged = 0
                         print(f"DEBUG - Creating outbound LAP_INFANT reservation: {res_id} (trigger sets price to FREE)")
                         
                         cursor.execute("""
@@ -2404,10 +2592,8 @@ def process_booking():
                         passenger_id=passenger_id,
                         instance_id=outbound_flight_id,
                         pax_type=passenger_type)
-                    else:
-                        # SEATED_INFANT: SQL trigger auto-calculates 50% of base price
-                        passenger_type = 'SEATED_INFANT'
-                        
+                    elif passenger_type == 'SEATED_INFANT':
+                        # SEATED_INFANT: SQL trigger TRG_Infant_Booking_Rules auto-calculates 50% of base price
                         if seat_index >= len(actual_outbound_seats):
                             print(f"ERROR - Not enough seats for seated infant {i}")
                             continue
@@ -2426,13 +2612,19 @@ def process_booking():
                         row_num = int(row_match.group())
                         seat_letter = letter_match.group()
                         
-                        print(f"DEBUG - Creating outbound SEATED_INFANT reservation: {res_id} for seat {row_num}{seat_letter} (trigger calculates 50% price)")
+                        # Use FN_Get_Infant_Price to get the 50% price
+                        cursor.execute("""
+                            SELECT FN_Get_Infant_Price(:instance_id, 'SEATED_INFANT', :class_id) FROM DUAL
+                        """, instance_id=outbound_flight_id, class_id=travel_class)
+                        infant_price = cursor.fetchone()[0] or 0
                         
-                        # Pass 0 as placeholder - SQL trigger TRG_Infant_Booking_Rules auto-calculates 50% of base price
+                        print(f"DEBUG - Creating outbound SEATED_INFANT reservation: {res_id} for seat {row_num}{seat_letter} (FN_Get_Infant_Price returned: {infant_price})")
+                        
+                        # Pass calculated price - trigger will also verify/recalculate if needed
                         cursor.execute("""
                             INSERT INTO Reservation 
                             (Reservation_ID, Booking_ID, Passenger_ID, Instance_ID, Row_Number, Seat_Letter, Price_Charged, Passenger_Type)
-                            VALUES (:res_id, :booking_id, :passenger_id, :instance_id, :row_num, :seat_letter, 0, :pax_type)
+                            VALUES (:res_id, :booking_id, :passenger_id, :instance_id, :row_num, :seat_letter, :price, :pax_type)
                         """, 
                         res_id=res_id,
                         booking_id=booking_id,
@@ -2440,6 +2632,7 @@ def process_booking():
                         instance_id=outbound_flight_id,
                         row_num=row_num,
                         seat_letter=seat_letter,
+                        price=infant_price,
                         pax_type=passenger_type)
                 else:
                     # ADULT: Regular passenger, full price, needs seat
@@ -2463,7 +2656,7 @@ def process_booking():
                     row_num = int(row_match.group())
                     seat_letter = letter_match.group()
                     
-                    # Verify seat exists in aircraft model
+                    # Verify seat exists in aircraft model (TRG_Validate_Seat_Exists trigger also validates this)
                     cursor.execute("""
                         SELECT 1 FROM Aircraft_Seat_Map 
                         WHERE Model_ID = :model_id 
@@ -2503,6 +2696,7 @@ def process_booking():
                     pax_type=passenger_type)
             
             # Create reservations for return flight if applicable
+            # Uses FN_Get_Infant_Type for database-side infant type determination
             if return_flight_id:
                 cursor.execute("""
                     SELECT fi.Model_ID, fr.Route_ID 
@@ -2528,9 +2722,6 @@ def process_booking():
                 return_seat_index = 0
                 actual_return_seats = [s for s in selected_return_seats if s != 'INFANT']
                 
-                # Track lap infant count for return flight
-                return_lap_infant_counter = 0
-                
                 for i, passenger in enumerate(passenger_data):
                     passenger_id = passenger_ids[i]
                     is_infant = passenger.get('title') == 'INF'
@@ -2538,12 +2729,16 @@ def process_booking():
                     res_id = generate_reservation_id(cursor)
                     
                     if is_infant:
-                        # Determine if this infant gets lap (free) or seat (50% price)
-                        if return_lap_infant_counter < adult_count:
-                            # LAP_INFANT: free, no seat - SQL trigger sets Price_Charged = 0
-                            passenger_type = 'LAP_INFANT'
-                            return_lap_infant_counter += 1
-                            
+                        # Use FN_Get_Infant_Type to determine LAP_INFANT vs SEATED_INFANT for return flight
+                        cursor.execute("""
+                            SELECT FN_Get_Infant_Type(:booking_id, :instance_id, :passenger_id) FROM DUAL
+                        """, booking_id=booking_id, instance_id=return_flight_id, passenger_id=passenger_id)
+                        passenger_type = cursor.fetchone()[0]
+                        
+                        print(f"DEBUG - FN_Get_Infant_Type for return flight returned: {passenger_type} for passenger {passenger_id}")
+                        
+                        if passenger_type == 'LAP_INFANT':
+                            # LAP_INFANT: free, no seat - SQL trigger TRG_Infant_Booking_Rules sets Price_Charged = 0
                             print(f"DEBUG - Creating return LAP_INFANT reservation: {res_id} (trigger sets price to FREE)")
                             
                             cursor.execute("""
@@ -2556,10 +2751,8 @@ def process_booking():
                             passenger_id=passenger_id,
                             instance_id=return_flight_id,
                             pax_type=passenger_type)
-                        else:
-                            # SEATED_INFANT: SQL trigger auto-calculates 50% of base price
-                            passenger_type = 'SEATED_INFANT'
-                            
+                        elif passenger_type == 'SEATED_INFANT':
+                            # SEATED_INFANT: Use FN_Get_Infant_Price to get 50% price
                             if return_seat_index >= len(actual_return_seats):
                                 print(f"ERROR - Not enough return seats for seated infant {i}")
                                 continue
@@ -2578,13 +2771,18 @@ def process_booking():
                             row_num = int(row_match.group())
                             seat_letter = letter_match.group()
                             
-                            print(f"DEBUG - Creating return SEATED_INFANT reservation: {res_id} for seat {row_num}{seat_letter} (trigger calculates 50% price)")
+                            # Use FN_Get_Infant_Price to calculate 50% price
+                            cursor.execute("""
+                                SELECT FN_Get_Infant_Price(:instance_id, 'SEATED_INFANT', :class_id) FROM DUAL
+                            """, instance_id=return_flight_id, class_id=travel_class)
+                            infant_price = cursor.fetchone()[0] or 0
                             
-                            # Pass 0 as placeholder - SQL trigger TRG_Infant_Booking_Rules auto-calculates 50% of base price
+                            print(f"DEBUG - Creating return SEATED_INFANT reservation: {res_id} for seat {row_num}{seat_letter} (FN_Get_Infant_Price returned: {infant_price})")
+                            
                             cursor.execute("""
                                 INSERT INTO Reservation 
                                 (Reservation_ID, Booking_ID, Passenger_ID, Instance_ID, Row_Number, Seat_Letter, Price_Charged, Passenger_Type)
-                                VALUES (:res_id, :booking_id, :passenger_id, :instance_id, :row_num, :seat_letter, 0, :pax_type)
+                                VALUES (:res_id, :booking_id, :passenger_id, :instance_id, :row_num, :seat_letter, :price, :pax_type)
                             """, 
                             res_id=res_id,
                             booking_id=booking_id,
@@ -2592,6 +2790,7 @@ def process_booking():
                             instance_id=return_flight_id,
                             row_num=row_num,
                             seat_letter=seat_letter,
+                            price=infant_price,
                             pax_type=passenger_type)
                     else:
                         # ADULT: Regular passenger, full price, needs seat
@@ -3008,7 +3207,7 @@ def verify_booking():
         if not booking:
             return render_template('error.html', error="Booking not found or contact information doesn't match")
         
-        # Get all reservations for this booking - UPDATED
+        # Get all ACTIVE reservations for this booking (exclude cancelled ones)
         cursor.execute("""
             SELECT r.Reservation_ID, r.Passenger_ID, r.Instance_ID, r.Row_Number, r.Seat_Letter, r.Price_Charged,
                    p.First_Name, p.Last_Name, p.Title,
@@ -3028,6 +3227,7 @@ def verify_booking():
             JOIN City c2 ON zm2.City_ID = c2.City_ID
             JOIN Aircraft_Row_Class arc ON fi.Model_ID = arc.Model_ID AND r.Row_Number = arc.Row_Number
             WHERE r.Booking_ID = :booking_id
+            AND r.Ticket_Status != 'CANCELLED'
             ORDER BY fi.Departure_Time
         """, booking_id=booking_id)
         
@@ -3104,6 +3304,11 @@ def process_booking_action():
 def cancel_reservations(reservation_ids, booking_id, email):
     """
     Cancel multiple reservations using USP_Cancel_Reservation stored procedure.
+    
+    IMPORTANT: When cancelling, ALL passengers on the same flight instance 
+    within the same booking are cancelled together (not just the selected ones).
+    This ensures the entire group's reservation is cancelled as a unit.
+    
     The procedure handles:
     - Refund calculation via FN_Calculate_Refund (80% if >24h before departure)
     - Updating Ticket_Status to CANCELLED
@@ -3114,9 +3319,35 @@ def cancel_reservations(reservation_ids, booking_id, email):
     cursor = conn.cursor()
     
     try:
-        total_refund = 0
+        # Get all unique flight instances from selected reservations
+        # Then get ALL reservations for those flight instances in this booking
+        # This ensures all passengers on the same flight get cancelled together
         
-        for res_id in reservation_ids:
+        placeholders = ','.join([f':res{i}' for i in range(len(reservation_ids))])
+        bind_vars = {f'res{i}': res_id for i, res_id in enumerate(reservation_ids)}
+        bind_vars['booking_id'] = booking_id
+        
+        # Find all reservations for the same flight instances within this booking
+        cursor.execute(f"""
+            SELECT DISTINCT r2.Reservation_ID
+            FROM Reservation r1
+            JOIN Reservation r2 ON r1.Instance_ID = r2.Instance_ID 
+                                AND r1.Booking_ID = r2.Booking_ID
+            WHERE r1.Reservation_ID IN ({placeholders})
+            AND r2.Booking_ID = :booking_id
+            AND r2.Ticket_Status != 'CANCELLED'
+        """, bind_vars)
+        
+        # Get all reservation IDs to cancel (includes all passengers on same flights)
+        all_reservation_ids = [row[0] for row in cursor.fetchall()]
+        
+        print(f"DEBUG - Selected reservations: {reservation_ids}")
+        print(f"DEBUG - All reservations to cancel (same flights): {all_reservation_ids}")
+        
+        total_refund = 0
+        cancelled_count = 0
+        
+        for res_id in all_reservation_ids:
             # Call stored procedure - it handles all cancellation logic
             refund_amount = cursor.var(oracledb.NUMBER)
             success = cursor.var(oracledb.NUMBER)
@@ -3130,8 +3361,10 @@ def cancel_reservations(reservation_ids, booking_id, email):
             # Check if cancellation was successful
             if success.getvalue() == 1:
                 total_refund += float(refund_amount.getvalue() or 0)
+                cancelled_count += 1
+                print(f"DEBUG - Cancelled reservation {res_id}, refund: {refund_amount.getvalue()}")
             else:
-                raise Exception(f"Failed to cancel reservation {res_id}")
+                print(f"DEBUG - Failed to cancel reservation {res_id}")
         
         # Commit all cancellations as a single transaction
         conn.commit()
@@ -3143,26 +3376,47 @@ def cancel_reservations(reservation_ids, booking_id, email):
         
         return render_template('cancellation_confirmation.html',
                              booking_id=booking_id,
-                             cancelled_count=len(reservation_ids),
+                             cancelled_count=cancelled_count,
                              total_refund=total_refund)
         
     except Exception as e:
         conn.rollback()
         print("Error during cancellation:", e)
+        import traceback
+        traceback.print_exc()
         return render_template('error.html', error="Cancellation failed")
     finally:
         cursor.close()
         conn.close()
 
 def redirect_to_reschedule(reservation_id):
+    """
+    Redirect to reschedule flow. When rescheduling, ALL passengers on the same
+    flight instance from the same booking should be rescheduled together.
+    Passenger info is pre-filled from existing reservation data.
+    """
     conn = get_connection()
     cursor = conn.cursor()
     
     try:
-        # Get original reservation details for rescheduling - UPDATED
+        # First, get the booking_id and instance_id from the selected reservation
+        cursor.execute("""
+            SELECT Booking_ID, Instance_ID FROM Reservation WHERE Reservation_ID = :res_id
+        """, res_id=reservation_id)
+        base_info = cursor.fetchone()
+        
+        if not base_info:
+            return render_template('error.html', error="Reservation not found")
+        
+        booking_id = base_info[0]
+        instance_id = base_info[1]
+        
+        # Get ALL active reservations for the same booking AND same flight instance
+        # This ensures all passengers on this flight get rescheduled together
         cursor.execute("""
             SELECT r.Reservation_ID, r.Booking_ID, r.Passenger_ID, r.Instance_ID, r.Row_Number, r.Seat_Letter, r.Price_Charged,
-                   p.First_Name, p.Last_Name, p.Title,
+                   p.First_Name, p.Last_Name, p.Title, p.Gender, TO_CHAR(p.Date_Of_Birth, 'YYYY-MM-DD'), p.Passport_Num,
+                   p.Linked_User_ID, r.Passenger_Type,
                    fi.Model_ID, fr.Source_Airport, fr.Dest_Airport,
                    fi.Departure_Time, fi.Arrival_Time,
                    a1.Airport_Name as Departure_Airport, a2.Airport_Name as Arrival_Airport,
@@ -3179,17 +3433,23 @@ def redirect_to_reschedule(reservation_id):
             JOIN City c1 ON zm1.City_ID = c1.City_ID
             JOIN City c2 ON zm2.City_ID = c2.City_ID
             JOIN Aircraft_Row_Class arc ON fi.Model_ID = arc.Model_ID AND r.Row_Number = arc.Row_Number
-            WHERE r.Reservation_ID = :res_id
-        """, res_id=reservation_id)
+            WHERE r.Booking_ID = :booking_id
+            AND r.Instance_ID = :instance_id
+            AND r.Ticket_Status != 'CANCELLED'
+            ORDER BY r.Reservation_ID
+        """, booking_id=booking_id, instance_id=instance_id)
         
-        original_flight = cursor.fetchone()
+        all_reservations = cursor.fetchall()
         
-        if not original_flight:
-            return render_template('error.html', error="Reservation not found")
+        if not all_reservations:
+            return render_template('error.html', error="No active reservations found")
+        
+        # Use first reservation's flight info as the "original flight" for display
+        original_flight = all_reservations[0]
         
         original_flight_info = {
             'reservation_id': original_flight[0],
-            'booking_id': original_flight[1],  # This is the original booking ID
+            'booking_id': original_flight[1],
             'passenger_id': original_flight[2],
             'instance_id': original_flight[3],
             'row_number': original_flight[4],
@@ -3197,30 +3457,68 @@ def redirect_to_reschedule(reservation_id):
             'price_charged': float(original_flight[6]),
             'passenger_name': f"{original_flight[7]} {original_flight[8]}",
             'title': original_flight[9],
-            'model_id': original_flight[10],
-            'departure_airport_id': original_flight[11],
-            'arrival_airport_id': original_flight[12],
-            'departure_time': original_flight[13].strftime('%d-%b-%Y %H:%M'),
-            'arrival_time': original_flight[14].strftime('%d-%b-%Y %H:%M'),
-            'departure_airport': original_flight[15],
-            'arrival_airport': original_flight[16],
-            'departure_city': original_flight[17],
-            'arrival_city': original_flight[18],
-            'travel_class': original_flight[19],
-            'departure_date': original_flight[13].strftime('%Y-%m-%d')
+            'model_id': original_flight[15],
+            'departure_airport_id': original_flight[16],
+            'arrival_airport_id': original_flight[17],
+            'departure_time': original_flight[18].strftime('%d-%b-%Y %H:%M'),
+            'arrival_time': original_flight[19].strftime('%d-%b-%Y %H:%M'),
+            'departure_airport': original_flight[20],
+            'arrival_airport': original_flight[21],
+            'departure_city': original_flight[22],
+            'arrival_city': original_flight[23],
+            'travel_class': original_flight[24],
+            'departure_date': original_flight[18].strftime('%Y-%m-%d'),
+            'total_passengers': len(all_reservations)  # Show how many passengers
         }
         
-        # Store the original booking ID in session for seat exclusion
-        session['reschedule_original_booking'] = original_flight[1]
+        # Build passenger data list for session (pre-fill passenger info)
+        # This way, seat selection will have all passenger data ready
+        passenger_data = []
+        reschedule_reservation_ids = []
+        
+        for res in all_reservations:
+            reschedule_reservation_ids.append(res[0])  # Reservation ID
+            passenger_data.append({
+                'first_name': res[7],
+                'last_name': res[8],
+                'title': res[9],
+                'gender': res[10],
+                'date_of_birth': res[11],
+                'passport_number': res[12] or '',
+                'existing_passenger_id': res[2],  # Passenger ID
+                'is_self': res[13] is not None,   # Has linked user
+                'passenger_type': res[14],         # ADULT or INFANT
+                'original_reservation_id': res[0]  # For tracking which reservation to update
+            })
+        
+        # Get booking contact info for session
+        cursor.execute("""
+            SELECT Contact_Email, Emergency_Phone FROM Booking WHERE Booking_ID = :booking_id
+        """, booking_id=booking_id)
+        booking_contact = cursor.fetchone()
+        
+        # Store everything in session for the reschedule flow
+        session['reschedule_original_booking'] = booking_id
+        session['reschedule_reservation_ids'] = reschedule_reservation_ids  # ALL reservation IDs
+        session['reschedule_passenger_data'] = passenger_data  # Pre-filled passenger info
+        session['reschedule_travel_class'] = original_flight[24]  # Keep same travel class
+        session['contact_email'] = booking_contact[0] if booking_contact else ''
+        session['contact_phone'] = booking_contact[1] if booking_contact else ''
+        
+        print(f"DEBUG - Reschedule: {len(all_reservations)} passengers on flight {instance_id}")
+        print(f"DEBUG - Reservation IDs: {reschedule_reservation_ids}")
         
         return render_template('reschedule_flights.html',
                              original_flight=original_flight_info,
                              reservation_id=reservation_id,
-                             original_booking_id=original_flight[1],
+                             original_booking_id=booking_id,
+                             passenger_count=len(all_reservations),
                              min_date=datetime.now().strftime('%Y-%m-%d'))
         
     except Exception as e:
         print("Error preparing reschedule:", e)
+        import traceback
+        traceback.print_exc()
         return render_template('error.html', error="Error preparing reschedule")
     finally:
         cursor.close()
@@ -3243,18 +3541,40 @@ def search_reschedule_flights():
 
 @app.route('/select-reschedule-flight/<flight_id>')
 def select_reschedule_flight(flight_id):
+    """
+    Handle flight selection for reschedule.
+    Sets up session with pre-filled passenger data from original reservations.
+    """
     # Get reschedule context from session
     reschedule_context = session.get('reschedule_context', {})
     reservation_id = reschedule_context.get('reservation_id')
-    original_booking_id = reschedule_context.get('original_booking_id')
+    original_booking_id = session.get('reschedule_original_booking')
     
-    if not reservation_id:
+    if not reservation_id and not original_booking_id:
         return render_template('error.html', error="Reschedule session expired")
+    
+    # Get pre-filled passenger data from redirect_to_reschedule
+    reschedule_passenger_data = session.get('reschedule_passenger_data', [])
+    reschedule_reservation_ids = session.get('reschedule_reservation_ids', [])
+    reschedule_travel_class = session.get('reschedule_travel_class', 'ECO')
+    
+    if not reschedule_passenger_data:
+        return render_template('error.html', error="Reschedule passenger data not found")
     
     # Store the new flight selection for reschedule
     session['reschedule_new_flight'] = flight_id
-    session['reschedule_reservation_id'] = reservation_id
-    session['reschedule_original_booking'] = original_booking_id
+    session['reschedule_reservation_id'] = reservation_id or reschedule_reservation_ids[0]
+    
+    # Set up session for seat_selection with pre-filled passenger data
+    session['passenger_data'] = reschedule_passenger_data  # Pre-filled from original reservations
+    session['passengers'] = len(reschedule_passenger_data)  # All passengers on this flight
+    session['travel_class'] = reschedule_travel_class
+    session['trip_type'] = 'one_way'  # Reschedule is always one-way
+    session['selected_outbound_flight'] = flight_id
+    session['is_reschedule'] = True
+    
+    print(f"DEBUG - Reschedule flight selected: {flight_id}")
+    print(f"DEBUG - Passengers to reschedule: {len(reschedule_passenger_data)}")
     
     # Redirect to seat selection for the new flight
     return redirect(url_for('seat_selection'))
@@ -3287,7 +3607,7 @@ def booking_actions():
         if not booking:
             return render_template('error.html', error="Booking not found")
         
-        # Get all reservations for this booking - UPDATED
+        # Get all ACTIVE reservations for this booking (exclude cancelled ones)
         cursor.execute("""
             SELECT r.Reservation_ID, r.Passenger_ID, r.Instance_ID, r.Row_Number, r.Seat_Letter, r.Price_Charged,
                    p.First_Name, p.Last_Name, p.Title,
@@ -3307,6 +3627,7 @@ def booking_actions():
             JOIN City c2 ON zm2.City_ID = c2.City_ID
             JOIN Aircraft_Row_Class arc ON fi.Model_ID = arc.Model_ID AND r.Row_Number = arc.Row_Number
             WHERE r.Booking_ID = :booking_id
+            AND r.Ticket_Status != 'CANCELLED'
             ORDER BY fi.Departure_Time
         """, booking_id=booking_id)
         
@@ -3356,52 +3677,48 @@ def booking_actions():
 
 @app.route('/complete-reschedule', methods=['POST'])
 def complete_reschedule():
-    """Complete the reschedule process after seat selection"""
-    reservation_id = session.get('reschedule_reservation_id')
+    """
+    Complete the reschedule process after seat selection.
+    Handles ALL passengers being rescheduled together.
+    """
+    # Get ALL reservation IDs to reschedule
+    reschedule_reservation_ids = session.get('reschedule_reservation_ids', [])
+    single_reservation_id = session.get('reschedule_reservation_id')
+    
+    # Fallback to single reservation if list not available
+    if not reschedule_reservation_ids and single_reservation_id:
+        reschedule_reservation_ids = [single_reservation_id]
+    
     new_flight_id = session.get('reschedule_new_flight')
     selected_seats = request.form.getlist('selected_outbound_seats')
+    passenger_data = session.get('passenger_data', session.get('reschedule_passenger_data', []))
     
-    if not reservation_id or not new_flight_id or not selected_seats:
-        return render_template('error.html', error="Reschedule session expired or no seats selected")
+    if not reschedule_reservation_ids or not new_flight_id:
+        return render_template('error.html', error="Reschedule session expired")
+    
+    if len(selected_seats) != len(reschedule_reservation_ids):
+        return render_template('error.html', 
+            error=f"Please select exactly {len(reschedule_reservation_ids)} seat(s) for all passengers")
     
     conn = get_connection()
     cursor = conn.cursor()
     
     try:
-        # Get original reservation details including booking info - UPDATED
+        # Get booking ID from first reservation
         cursor.execute("""
-            SELECT r.Booking_ID, r.Passenger_ID, r.Price_Charged, r.Instance_ID,
-                   fi.Model_ID as Old_Model_ID, fi.Route_ID as Old_Route_ID,
-                   b.Booking_Status
+            SELECT r.Booking_ID, b.Booking_Status
             FROM Reservation r
-            JOIN Flight_Instance fi ON r.Instance_ID = fi.Instance_ID
             JOIN Booking b ON r.Booking_ID = b.Booking_ID
             WHERE r.Reservation_ID = :res_id
-        """, res_id=reservation_id)
+        """, res_id=reschedule_reservation_ids[0])
         
-        original_res = cursor.fetchone()
-        if not original_res:
+        booking_info = cursor.fetchone()
+        if not booking_info:
             return render_template('error.html', error="Original reservation not found")
         
-        booking_id = original_res[0]  # Use the EXISTING booking ID
-        passenger_id = original_res[1]
-        old_price = float(original_res[2])
-        old_instance_id = original_res[3]  # Get the old flight instance
-        old_model_id = original_res[4]
-        old_route_id = original_res[5]
+        booking_id = booking_info[0]
         
-        # **CRITICAL: Delete old reservation FIRST to free up the seat**
-        print(f"DEBUG - Deleting old reservation: {reservation_id}")
-        cursor.execute("""
-            DELETE FROM Reservation 
-            WHERE Reservation_ID = :res_id
-        """, res_id=reservation_id)
-        
-        # **COMMIT the deletion immediately to free up the seat**
-        conn.commit()
-        print(f"DEBUG - Old reservation {reservation_id} deleted and committed")
-        
-        # Now proceed with creating the new reservation
+        # Get new flight info
         cursor.execute("""
             SELECT fi.Model_ID, fr.Route_ID 
             FROM Flight_Instance fi
@@ -3412,7 +3729,7 @@ def complete_reschedule():
         new_model_id = new_flight_info[0]
         new_route_id = new_flight_info[1]
         
-        # Get new seat price using the correct travel class - UPDATED
+        # Get new price
         cursor.execute("""
             SELECT Base_Price FROM Route_Pricing 
             WHERE Route_ID = :route_id 
@@ -3421,72 +3738,93 @@ def complete_reschedule():
         """, route_id=new_route_id, class_id=session.get('travel_class', 'ECO'))
         
         new_price_result = cursor.fetchone()
-        new_price = new_price_result[0] if new_price_result else old_price
+        new_base_price = new_price_result[0] if new_price_result else 0
         
-        # Parse new seat information
-        new_seat_simple = selected_seats[0]  # First selected seat
-        row_match = re.search(r'\d+', new_seat_simple)
-        letter_match = re.search(r'[A-Z]', new_seat_simple)
+        total_price_difference = 0
+        new_reservation_ids = []
         
-        if not row_match or not letter_match:
-            return render_template('error.html', error="Invalid seat format")
+        print(f"DEBUG - Rescheduling {len(reschedule_reservation_ids)} reservations to flight {new_flight_id}")
         
-        new_row_num = int(row_match.group())
-        new_seat_letter = letter_match.group()
+        # Process each reservation
+        for i, old_res_id in enumerate(reschedule_reservation_ids):
+            # Get original reservation details
+            cursor.execute("""
+                SELECT r.Passenger_ID, r.Price_Charged, r.Passenger_Type
+                FROM Reservation r
+                WHERE r.Reservation_ID = :res_id
+            """, res_id=old_res_id)
+            
+            original_res = cursor.fetchone()
+            if not original_res:
+                print(f"DEBUG - Reservation {old_res_id} not found, skipping")
+                continue
+            
+            passenger_id = original_res[0]
+            old_price = float(original_res[1])
+            passenger_type = original_res[2]
+            
+            # Calculate new price (infants get 50% discount)
+            if passenger_type == 'INFANT':
+                new_price = new_base_price * 0.5
+            else:
+                new_price = new_base_price
+            
+            total_price_difference += (new_price - old_price)
+            
+            # Parse seat for this passenger
+            seat_str = selected_seats[i]
+            row_match = re.search(r'\d+', seat_str)
+            letter_match = re.search(r'[A-Z]', seat_str)
+            
+            if not row_match or not letter_match:
+                return render_template('error.html', error=f"Invalid seat format: {seat_str}")
+            
+            new_row_num = int(row_match.group())
+            new_seat_letter = letter_match.group()
+            
+            # Verify seat exists
+            cursor.execute("""
+                SELECT 1 FROM Aircraft_Seat_Map 
+                WHERE Model_ID = :model_id 
+                AND Row_Number = :row_num 
+                AND Seat_Letter = :seat_letter
+            """, model_id=new_model_id, row_num=new_row_num, seat_letter=new_seat_letter)
+            
+            if not cursor.fetchone():
+                return render_template('error.html', error=f"Seat {seat_str} not found in aircraft")
+            
+            # Delete old reservation
+            print(f"DEBUG - Deleting old reservation: {old_res_id}")
+            cursor.execute("""
+                DELETE FROM Reservation WHERE Reservation_ID = :res_id
+            """, res_id=old_res_id)
+            
+            # Generate new reservation ID using sequence
+            cursor.execute("""
+                SELECT 'IAT-' || TO_CHAR(SYSDATE, 'YYYYMMDD') || '-' || LPAD(Reservation_Seq.NEXTVAL, 6, '0') 
+                FROM DUAL
+            """)
+            new_res_id = cursor.fetchone()[0]
+            new_reservation_ids.append(new_res_id)
+            
+            # Create new reservation
+            cursor.execute("""
+                INSERT INTO Reservation 
+                (Reservation_ID, Booking_ID, Passenger_ID, Instance_ID, Row_Number, Seat_Letter, Price_Charged, Passenger_Type, Ticket_Status)
+                VALUES (:res_id, :booking_id, :passenger_id, :instance_id, :row_num, :seat_letter, :price, :pax_type, 'ISSUED')
+            """, 
+            res_id=new_res_id,
+            booking_id=booking_id,
+            passenger_id=passenger_id,
+            instance_id=new_flight_id,
+            row_num=new_row_num,
+            seat_letter=new_seat_letter,
+            price=new_price,
+            pax_type=passenger_type)
+            
+            print(f"DEBUG - Created new reservation {new_res_id} for passenger {passenger_id} at seat {new_row_num}{new_seat_letter}")
         
-        # Verify new seat exists - UPDATED
-        cursor.execute("""
-            SELECT 1 FROM Aircraft_Seat_Map 
-            WHERE Model_ID = :model_id 
-            AND Row_Number = :row_num 
-            AND Seat_Letter = :seat_letter
-        """, model_id=new_model_id, row_num=new_row_num, seat_letter=new_seat_letter)
-        
-        if not cursor.fetchone():
-            return render_template('error.html', error="New seat not found in aircraft")
-        
-        # **CRITICAL: Check if the new seat is actually available**
-        cursor.execute("""
-            SELECT 1 FROM Reservation 
-            WHERE Instance_ID = :instance_id 
-            AND Row_Number = :row_num 
-            AND Seat_Letter = :seat_letter
-        """, instance_id=new_flight_id, row_num=new_row_num, seat_letter=new_seat_letter)
-        
-        if cursor.fetchone():
-            return render_template('error.html', error="Selected seat is no longer available. Please choose a different seat.")
-        
-        # Calculate price difference and change fee
-        price_difference = new_price - old_price
-        change_fee = 500  # Fixed change fee
-        
-        # Generate new reservation ID
-        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-        new_reservation_id = f"RES{timestamp}"
-        
-        print(f"DEBUG - Creating new reservation:")
-        print(f"  New Reservation: {new_reservation_id}")
-        print(f"  Booking ID: {booking_id}")
-        print(f"  New Flight: {new_flight_id}")
-        print(f"  New Seat: {new_row_num}{new_seat_letter}")
-        
-        # Create new reservation - UPDATED
-        cursor.execute("""
-            INSERT INTO Reservation 
-            (Reservation_ID, Booking_ID, Passenger_ID, Instance_ID, Row_Number, Seat_Letter, Price_Charged)
-            VALUES (:res_id, :booking_id, :passenger_id, :instance_id, :row_num, :seat_letter, :price)
-        """, 
-        res_id=new_reservation_id,
-        booking_id=booking_id,
-        passenger_id=passenger_id,
-        instance_id=new_flight_id,
-        row_num=new_row_num,
-        seat_letter=new_seat_letter,
-        price=new_price)
-        
-        print(f"DEBUG - New reservation {new_reservation_id} created for booking {booking_id}")
-        
-        # Update booking status to CONFIRMED
+        # Update booking status
         cursor.execute("""
             UPDATE Booking SET Booking_Status = 'CONFIRMED' 
             WHERE Booking_ID = :booking_id
@@ -3494,25 +3832,27 @@ def complete_reschedule():
         
         conn.commit()
         
-        print(f"DEBUG - Reschedule completed successfully:")
-        print(f"  Booking ID: {booking_id} (UPDATED)")
-        print(f"  Old Reservation: {reservation_id} (DELETED)")
-        print(f"  New Reservation: {new_reservation_id} (CREATED)")
+        change_fee = 500 * len(reschedule_reservation_ids)  # Fee per passenger
         
-        # **CRITICAL: Clear ALL session data to prevent stale data**
+        print(f"DEBUG - Reschedule completed successfully:")
+        print(f"  Booking ID: {booking_id}")
+        print(f"  Passengers rescheduled: {len(new_reservation_ids)}")
+        print(f"  Price difference: {total_price_difference}")
+        
+        # Clear session
         clear_reschedule_session()
         
         return render_template('reschedule_confirmation.html',
                              booking_id=booking_id,
-                             new_reservation_id=new_reservation_id,
+                             new_reservation_ids=new_reservation_ids,
+                             passenger_count=len(new_reservation_ids),
                              new_flight_id=new_flight_id,
-                             price_difference=price_difference,
+                             price_difference=total_price_difference,
                              change_fee=change_fee)
         
     except Exception as e:
         conn.rollback()
         print("Error during reschedule:", e)
-        print("Error type:", type(e).__name__)
         import traceback
         traceback.print_exc()
         return render_template('error.html', error=f"Reschedule failed: {str(e)}")
@@ -3523,10 +3863,14 @@ def complete_reschedule():
 def clear_reschedule_session():
     """Helper function to clear all reschedule and booking session data"""
     session.pop('reschedule_reservation_id', None)
+    session.pop('reschedule_reservation_ids', None)  # NEW: Clear all reservation IDs
     session.pop('reschedule_new_flight', None)
     session.pop('reschedule_context', None)
     session.pop('reschedule_original_booking', None)
+    session.pop('reschedule_passenger_data', None)  # NEW: Clear pre-filled passenger data
+    session.pop('reschedule_travel_class', None)    # NEW: Clear travel class
     session.pop('is_reschedule', None)
+    session.pop('passenger_data', None)  # Clear passenger data used in seat selection
     
     # Also clear normal booking session data to prevent conflicts
     session.pop('selected_outbound_seats', None)
