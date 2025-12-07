@@ -1,0 +1,180 @@
+@startuml Flight_Booking_System_Conceptual_ERD
+
+' ============================================
+' CONCEPTUAL ERD - Flight Booking System
+' ============================================
+
+skinparam linetype polyline
+skinparam nodesep 80
+skinparam ranksep 100
+
+' ============================================
+' GEOGRAPHIC DOMAIN
+' ============================================
+
+class Country {
+  + Country_ID [PK]
+  --
+  Country_Name
+}
+
+class State_Province {
+  + State_ID [PK]
+  --
+  State_Name
+}
+
+class City {
+  + City_ID [PK]
+  --
+  City_Name
+}
+
+class Zip_Master {
+  + Zipcode [PK]
+}
+
+class Airport {
+  + Airport_ID [PK]
+  --
+  Airport_Name
+}
+
+Country "1" -- "0..*" State_Province : contains
+State_Province "1" -- "0..*" City : contains
+City "1" -- "0..*" Zip_Master : has
+Zip_Master "1" -- "0..*" Airport : locates
+
+' ============================================
+' AIRCRAFT CONFIGURATION DOMAIN
+' ============================================
+
+class Aircraft_Model {
+  + Model_ID [PK]
+  --
+  Model_Name
+  Manufacturer
+}
+
+class Travel_Class {
+  + Class_ID [PK]
+  --
+  Class_Name
+}
+
+class Aircraft_Configuration {
+  + Model_ID [PK]
+  + Row_Number [PK]
+  --
+  Seats_In_Row
+}
+
+Aircraft_Model "1" -- "0..*" Aircraft_Configuration : configured
+Travel_Class "1" -- "0..*" Aircraft_Configuration : defines
+
+' ============================================
+' FLIGHT OPERATIONS DOMAIN
+' ============================================
+
+class Flight_Route {
+  + Route_ID [PK]
+  --
+  Base_Duration
+}
+
+class Flight_Service {
+  + Service_ID [PK]
+  --
+  Service_Name
+}
+
+class Flight_Instance {
+  + Instance_ID [PK]
+  --
+  Departure_Time
+  Arrival_Time
+  Flight_Status
+  Price_Multiplier
+}
+
+Airport "1" -- "0..*" Flight_Route : origin
+Airport "1" -- "0..*" Flight_Route : destination
+Flight_Route "1" -- "0..*" Flight_Instance : operates
+Aircraft_Model "1" -- "0..*" Flight_Instance : assigned
+
+' ============================================
+' PRICING & SERVICES (M:N)
+' ============================================
+
+Flight_Route "0..*" -- "0..*" Travel_Class : << priced >>\n{Base_Price, Valid_From, Valid_To}
+Flight_Route "0..*" -- "0..*" Travel_Class : << offers services >>\n{Service_ID, Is_Complimentary}
+Flight_Service "1" -- "0..*" Flight_Route : available
+
+' ============================================
+' USER & PASSENGER DOMAIN
+' ============================================
+
+class App_User {
+  + User_ID [PK]
+  --
+  Email
+  Password_Hash
+  Phone_Number
+  Created_At
+}
+
+class Passenger {
+  + Passenger_ID [PK]
+  --
+  Title
+  First_Name
+  Last_Name
+  Gender
+  Date_Of_Birth
+  Passport_Num
+}
+
+App_User "1" -- "0..1" Passenger : has profile
+Passenger "0..1" -- "0..*" Passenger : guardian for
+App_User "0..*" -- "0..*" App_User : << family >>\n{Relationship, Status}
+
+' ============================================
+' BOOKING & RESERVATION DOMAIN
+' ============================================
+
+class Booking {
+  + Booking_ID [PK]
+  --
+  Booking_Date
+  Booking_Status
+  Contact_Email
+  Emergency_Phone
+}
+
+class Payment {
+  + Payment_ID [PK]
+  --
+  Amount_Paid
+  Payment_Date
+  Payment_Method
+}
+
+class Cancellation_Log {
+  + Log_ID [PK]
+  --
+  Cancel_Date
+  Reason
+}
+
+App_User "1" -- "0..*" Booking : makes
+Booking "1" -- "1" Payment : paid via
+Booking "1" -- "0..1" Cancellation_Log : may cancel
+
+' ============================================
+' CORE M:N RELATIONSHIPS
+' ============================================
+
+Booking "0..*" -- "0..*" Passenger : includes
+Passenger "0..*" -- "0..*" Flight_Instance : << travels >>\n{Row_Number, Seat_Letter,\nPrice_Charged, Passenger_Type}
+
+@enduml

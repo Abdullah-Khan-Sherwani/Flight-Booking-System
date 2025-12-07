@@ -1,0 +1,243 @@
+erDiagram
+    %% ===========================================
+    %% CONCEPTUAL ERD - Flight Booking System
+    %% Database Design Best Practices Applied:
+    %% - Entity abstraction (essential business concepts only)
+    %% - M:N relationships shown directly (no junction tables)
+    %% - No implementation details (data types, FKs)
+    %% - Attributes distributed from bridge tables where needed
+    %% ===========================================
+
+    %% -------------------------------------------
+    %% GEOGRAPHIC DOMAIN
+    %% -------------------------------------------
+
+    Country {
+        string Country_ID PK
+        string Country_Name
+    }
+
+    State_Province {
+        string State_ID PK
+        string State_Name
+        string Country_ID
+    }
+
+    City {
+        string City_ID PK
+        string City_Name
+        string State_ID
+    }
+
+    Zip_Master {
+        string Zipcode PK
+        string City_ID
+    }
+
+    Airport {
+        string Airport_ID PK
+        string Airport_Name
+        string Zipcode
+    }
+
+    %% Geographic Hierarchy
+    Country ||--o{ State_Province : contains
+    State_Province ||--o{ City : contains
+    City ||--o{ Zip_Master : has
+    Zip_Master ||--o{ Airport : locates
+
+    %% -------------------------------------------
+    %% AIRCRAFT CONFIGURATION DOMAIN
+    %% -------------------------------------------
+
+    Aircraft_Model {
+        string Model_ID PK
+        string Model_Name
+        string Manufacturer
+    }
+
+    Travel_Class {
+        string Class_ID PK
+        string Class_Name
+    }
+
+    %% Seat Configuration (Row-level layout per model + class)
+    %% Kept as entity: represents physical aircraft configuration
+    Aircraft_Configuration {
+        string Model_ID PK
+        int Row_Number PK
+        string Class_ID
+        int Seats_In_Row
+    }
+
+    Aircraft_Model ||--o{ Aircraft_Configuration : "configured with"
+    Travel_Class ||--o{ Aircraft_Configuration : "defines"
+
+    %% -------------------------------------------
+    %% FLIGHT OPERATIONS DOMAIN
+    %% -------------------------------------------
+
+    Flight_Route {
+        string Route_ID PK
+        string Source_Airport
+        string Dest_Airport
+        int Base_Duration
+    }
+
+    Flight_Service {
+        string Service_ID PK
+        string Service_Name
+    }
+
+    Flight_Instance {
+        string Instance_ID PK
+        string Route_ID
+        string Model_ID
+        datetime Departure_Time
+        datetime Arrival_Time
+        string Flight_Status
+        decimal Price_Multiplier
+    }
+
+    %% Route topology
+    Airport ||--o{ Flight_Route : "origin of"
+    Airport ||--o{ Flight_Route : "destination of"
+
+    %% Flight hierarchy
+    Flight_Route ||--o{ Flight_Instance : "operates as"
+    Aircraft_Model ||--o{ Flight_Instance : "assigned to"
+
+    %% -------------------------------------------
+    %% PRICING DOMAIN
+    %% -------------------------------------------
+    %% M:N: Route-Class Pricing
+    %% Each route-class combination has base price + validity period
+    Flight_Route }o--o{ Travel_Class : "priced for (Base_Price, Valid_From, Valid_To)"
+
+    %% -------------------------------------------
+    %% SERVICE OFFERING DOMAIN
+    %% -------------------------------------------
+    %% M:N: Route-Class Services
+    %% Services vary by route and class (WiFi in Business, not Economy)
+    Flight_Route }o--o{ Travel_Class : "offers services (Service_ID, Is_Complimentary, Cost_If_Paid)"
+
+    %% Service catalog
+    Flight_Service ||--o{ Flight_Route : "available on"
+
+    %% -------------------------------------------
+    %% USER & AUTHENTICATION DOMAIN
+    %% -------------------------------------------
+
+    App_User {
+        int User_ID PK
+        string Email
+        string Password_Hash
+        string Phone_Number
+        datetime Created_At
+    }
+
+    %% -------------------------------------------
+    %% PASSENGER DOMAIN
+    %% -------------------------------------------
+
+    Passenger {
+        int Passenger_ID PK
+        int Linked_User_ID
+        string Title
+        string First_Name
+        string Last_Name
+        string Gender
+        date Date_Of_Birth
+        string Passport_Num
+    }
+
+    %% User-Passenger link (optional: passengers may not have accounts)
+    App_User ||--o| Passenger : "has profile"
+
+    %% Self-reference: Infant to Adult association
+    Passenger ||--o{ Passenger : "guardian for"
+
+    %% M:N: User Family Network
+    %% Users can link to other users as family members
+    App_User }o--o{ App_User : "family of (Relationship, Status)"
+
+    %% -------------------------------------------
+    %% BOOKING & RESERVATION DOMAIN
+    %% -------------------------------------------
+
+    Booking {
+        string Booking_ID PK
+        int Lead_User_ID
+        datetime Booking_Date
+        string Booking_Status
+        string Contact_Email
+        string Emergency_Phone
+    }
+
+    Payment {
+        string Payment_ID PK
+        string Booking_ID
+        decimal Amount_Paid
+        datetime Payment_Date
+        string Payment_Method
+    }
+
+    Cancellation_Log {
+        int Log_ID PK
+        string Booking_ID
+        datetime Cancel_Date
+        string Reason
+    }
+
+    %% Booking ownership and lifecycle
+    App_User ||--o{ Booking : makes
+    Booking ||--|| Payment : "paid via"
+    Booking ||--o| Cancellation_Log : "may cancel"
+
+    %% -------------------------------------------
+    %% CORE M:N RELATIONSHIPS (Reservation Bridge Dissolved)
+    %% -------------------------------------------
+    
+    %% M:N: Booking includes multiple Passengers
+    Booking }o--o{ Passenger : includes
+
+    %% M:N: Passenger travels on multiple Flights
+    %% Carries: Seat_Number (Row + Letter), Price_Charged, Passenger_Type, Ticket_Status
+    Passenger }o--o{ Flight_Instance : "travels on (Row_Number, Seat_Letter, Price_Charged, Passenger_Type)"
+
+    %% ===========================================
+    %% CONCEPTUAL MODEL DESIGN NOTES
+    %% ===========================================
+    %% 
+    %% ENTITIES RETAINED FROM PHYSICAL SCHEMA:
+    %% 1. Country, State_Province, City, Zip_Master, Airport (Geographic hierarchy)
+    %% 2. Aircraft_Model, Travel_Class (Aircraft catalog)
+    %% 3. Aircraft_Configuration (formerly Aircraft_Row_Class - row layout per model)
+    %% 4. Flight_Route, Flight_Instance (Flight operations)
+    %% 5. Flight_Service (Service catalog)
+    %% 6. App_User, Passenger (User management)
+    %% 7. Booking, Payment, Cancellation_Log (Transaction management)
+    %%
+    %% BRIDGE TABLES DISSOLVED (M:N shown directly):
+    %% 1. Aircraft_Seat_Map -> Absorbed into Aircraft_Configuration concept
+    %% 2. Service_Offering -> M:N: Flight_Route }o--o{ Travel_Class
+    %%    Attributes: Service_ID, Is_Complimentary, Cost_If_Paid, Valid_From, Valid_To
+    %% 3. Route_Pricing -> M:N: Flight_Route }o--o{ Travel_Class
+    %%    Attributes: Base_Price, Valid_From, Valid_To
+    %% 4. Reservation -> TWO M:N relationships:
+    %%    a) Booking }o--o{ Passenger (booking contains passengers)
+    %%    b) Passenger }o--o{ Flight_Instance (passenger travels on flights)
+    %%    Attributes on (b): Row_Number, Seat_Letter, Price_Charged, Passenger_Type
+    %% 5. User_Family -> M:N self-relationship: App_User }o--o{ App_User
+    %%    Attributes: Relationship, Status
+    %%
+    %% DESIGN RATIONALE:
+    %% - Aircraft_Configuration kept as entity (not dissolved) because:
+    %%   * Represents physical row configuration (business concept)
+    %%   * Contains Seats_In_Row (non-key attribute)
+    %%   * Used for seat validation business rules
+    %% - Service_Offering and Route_Pricing shown as single M:N (simplified)
+    %%   * In practice, these would be separate relationships with different attributes
+    %%   * Combined here for conceptual clarity
+    %% - Reservation split preserves both booking-passenger and passenger-flight semantics
+    %% ===========================================
