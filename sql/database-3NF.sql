@@ -807,31 +807,30 @@ END;
 /
 
 --------------------------------------------------------------------------------
--- 11. RESERVATION CANCELLATION PROCEDURE
--- Cancels a reservation and calculates refund based on cancellation policy.
+-- 11. RESERVATION CANCELLATION PROCEDURE (UPDATED)
+-- Cancels a reservation and calculates refund based on departure-time policy.
+-- Works in harmony with triggers:
+-- - TRG_Auto_Cancel_Booking: Automatically updates Booking.Booking_Status
+-- - TRG_Auto_Log_Booking_Cancellation: Automatically logs to Cancellation_Log
 -- 
--- CANCELLATION POLICY:
--- - Within 24 hours of booking: 75% refund
--- - After 24 hours of booking: 100% refund
+-- CANCELLATION POLICY (via FN_Calculate_Refund):
+-- - More than 24 hours before departure: 80% refund
+-- - 24 hours or less before departure: 0% refund
 -- 
--- This procedure also:
--- 1. Updates reservation status to CANCELLED
--- 2. Logs the cancellation
--- 3. Updates booking status to CANCELLED if all reservations are cancelled
+-- This procedure:
+-- 1. Validates reservation exists and is not already cancelled
+-- 2. Calculates refund using FN_Calculate_Refund (departure-based)
+-- 3. Updates reservation status to CANCELLED and frees seat
+-- 4. Triggers handle booking status update and logging automatically
 --------------------------------------------------------------------------------
 CREATE OR REPLACE PROCEDURE USP_Cancel_Reservation (
     p_Reservation_ID IN VARCHAR2,
     p_Refund_Amount OUT NUMBER,
     p_Success OUT NUMBER
 ) AS
-    v_Booking_ID VARCHAR2(6);
-    v_Booking_Date TIMESTAMP;
+    v_Instance_ID VARCHAR2(8);
     v_Price_Charged NUMBER(10,2);
-    v_Hours_Since_Booking NUMBER;
     v_Ticket_Status VARCHAR2(20);
-    v_Total_Reservations NUMBER;
-    v_Cancelled_Reservations NUMBER;
-    v_Log_ID NUMBER;
 BEGIN
     -- Initialize output parameters
     p_Success := 0;
@@ -839,11 +838,10 @@ BEGIN
     
     -- 1. Get reservation details
     BEGIN
-        SELECT r.Booking_ID, r.Price_Charged, r.Ticket_Status, b.Booking_Date
-        INTO v_Booking_ID, v_Price_Charged, v_Ticket_Status, v_Booking_Date
-        FROM Reservation r
-        JOIN Booking b ON r.Booking_ID = b.Booking_ID
-        WHERE r.Reservation_ID = p_Reservation_ID;
+        SELECT Instance_ID, Price_Charged, Ticket_Status
+        INTO v_Instance_ID, v_Price_Charged, v_Ticket_Status
+        FROM Reservation
+        WHERE Reservation_ID = p_Reservation_ID;
     EXCEPTION
         WHEN NO_DATA_FOUND THEN
             RAISE_APPLICATION_ERROR(-20200, 'Reservation not found: ' || p_Reservation_ID);
@@ -854,53 +852,170 @@ BEGIN
         RAISE_APPLICATION_ERROR(-20201, 'Reservation already cancelled');
     END IF;
     
-    -- 3. Calculate hours since booking (FIXED)
-    v_Hours_Since_Booking := EXTRACT(DAY FROM (SYSTIMESTAMP - v_Booking_Date)) * 24 
-                           + EXTRACT(HOUR FROM (SYSTIMESTAMP - v_Booking_Date))
-                           + EXTRACT(MINUTE FROM (SYSTIMESTAMP - v_Booking_Date)) / 60;
+    -- 3. Calculate refund using FN_Calculate_Refund (departure-based policy)
+    p_Refund_Amount := FN_Calculate_Refund(v_Instance_ID, v_Price_Charged);
     
-    -- 4. Calculate refund based on policy
-    IF v_Hours_Since_Booking <= 24 THEN
-        p_Refund_Amount := v_Price_Charged * 0.75;  -- 75% refund within 24h
-    ELSE
-        p_Refund_Amount := v_Price_Charged;  -- 100% refund after 24h
-    END IF;
-    
-    -- 5. Update reservation status to CANCELLED
+    -- 4. Update reservation - this triggers TRG_Auto_Cancel_Booking
+    --    which handles booking status and logging automatically
     UPDATE Reservation
-    SET Ticket_Status = 'CANCELLED'
+    SET Ticket_Status = 'CANCELLED',
+        Row_Number = NULL,
+        Seat_Letter = NULL
     WHERE Reservation_ID = p_Reservation_ID;
     
-    -- 6. Log the cancellation
-    SELECT NVL(MAX(Log_ID), 0) + 1 INTO v_Log_ID FROM Cancellation_Log;
-    INSERT INTO Cancellation_Log (Log_ID, Booking_ID, Cancel_Date, Reason)
-    VALUES (v_Log_ID, v_Booking_ID, SYSTIMESTAMP, 'Cancelled via USP_Cancel_Reservation');
+    -- 5. Success - caller controls commit/rollback
+    p_Success := 1;
     
-    -- 7. Check if all reservations in booking are cancelled
+EXCEPTION
+    WHEN OTHERS THEN
+        p_Success := 0;
+        RAISE;
+END;
+/
+
+--------------------------------------------------------------------------------
+-- 12. ADDITIONAL BUSINESS LOGIC TRIGGERS
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+-- A. AUTO-CANCEL BOOKING TRIGGER
+-- When all reservations in a booking have Ticket_Status = 'CANCELLED',
+-- automatically update Booking.Booking_Status to 'CANCELLED'.
+-- This eliminates the need for manual booking status updates in application code.
+--------------------------------------------------------------------------------
+CREATE OR REPLACE TRIGGER TRG_Auto_Cancel_Booking
+AFTER UPDATE OF Ticket_Status ON Reservation
+FOR EACH ROW
+WHEN (NEW.Ticket_Status = 'CANCELLED')
+DECLARE
+    v_Booking_ID VARCHAR2(6);
+    v_Total_Reservations NUMBER;
+    v_Cancelled_Reservations NUMBER;
+BEGIN
+    v_Booking_ID := :NEW.Booking_ID;
+    
+    -- Count total reservations in this booking
     SELECT COUNT(*) INTO v_Total_Reservations
     FROM Reservation
     WHERE Booking_ID = v_Booking_ID;
     
+    -- Count cancelled reservations in this booking
     SELECT COUNT(*) INTO v_Cancelled_Reservations
     FROM Reservation
     WHERE Booking_ID = v_Booking_ID
     AND Ticket_Status = 'CANCELLED';
     
-    -- 8. If all reservations cancelled, update booking status
+    -- If all reservations are cancelled, update booking status
     IF v_Total_Reservations = v_Cancelled_Reservations THEN
         UPDATE Booking
         SET Booking_Status = 'CANCELLED'
-        WHERE Booking_ID = v_Booking_ID;
+        WHERE Booking_ID = v_Booking_ID
+        AND Booking_Status != 'CANCELLED';  -- Avoid redundant updates
+    END IF;
+END;
+/
+
+--------------------------------------------------------------------------------
+-- B. AUTO-LOG BOOKING CANCELLATION TRIGGER
+-- When Booking.Booking_Status changes to 'CANCELLED', automatically insert
+-- a record into Cancellation_Log. This is BOOKING-LEVEL logging only.
+-- Fires only when the entire booking is cancelled (not per-reservation).
+--------------------------------------------------------------------------------
+CREATE OR REPLACE TRIGGER TRG_Auto_Log_Booking_Cancellation
+AFTER UPDATE OF Booking_Status ON Booking
+FOR EACH ROW
+WHEN (NEW.Booking_Status = 'CANCELLED' AND OLD.Booking_Status != 'CANCELLED')
+DECLARE
+    v_Log_ID NUMBER;
+BEGIN
+    -- Get next Log_ID
+    SELECT NVL(MAX(Log_ID), 0) + 1 INTO v_Log_ID FROM Cancellation_Log;
+    
+    -- Insert cancellation log entry
+    INSERT INTO Cancellation_Log (Log_ID, Booking_ID, Cancel_Date, Reason)
+    VALUES (v_Log_ID, :NEW.Booking_ID, SYSTIMESTAMP, 'Booking cancelled - all reservations cancelled');
+END;
+/
+
+--------------------------------------------------------------------------------
+-- C. REFUND CALCULATION FUNCTION
+-- Calculates refund amount based on hours until departure (NOT hours since booking).
+-- 
+-- REFUND POLICY (Departure-Based - Customer Friendly):
+-- - More than 24 hours before departure: 80% refund
+-- - 24 hours or less before departure: 0% refund (no refund)
+-- 
+-- Parameters:
+--   p_Instance_ID: The flight instance to check departure time
+--   p_Price_Charged: The original ticket price
+-- Returns:
+--   The refund amount (0 to 80% of price)
+--------------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION FN_Calculate_Refund(
+    p_Instance_ID  IN VARCHAR2,
+    p_Price_Charged IN NUMBER
+) RETURN NUMBER IS
+    v_Departure_Time TIMESTAMP;
+    v_Hours_Until_Departure NUMBER;
+    v_Refund_Amount NUMBER(10,2);
+BEGIN
+    -- Get departure time for this flight instance
+    SELECT Departure_Time INTO v_Departure_Time
+    FROM Flight_Instance
+    WHERE Instance_ID = p_Instance_ID;
+    
+    -- Calculate hours until departure
+    v_Hours_Until_Departure := (CAST(v_Departure_Time AS DATE) - CAST(SYSTIMESTAMP AS DATE)) * 24;
+    
+    -- Apply refund policy
+    IF v_Hours_Until_Departure > 24 THEN
+        v_Refund_Amount := p_Price_Charged * 0.80;  -- 80% refund if >24h before departure
+    ELSE
+        v_Refund_Amount := 0;  -- No refund if <=24h before departure
     END IF;
     
-    -- 9. Success
-    p_Success := 1;
-    COMMIT;
+    RETURN v_Refund_Amount;
     
 EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        RETURN 0;  -- Flight not found, no refund
     WHEN OTHERS THEN
-        ROLLBACK;
-        p_Success := 0;
-        RAISE;
+        RETURN 0;  -- Any error, no refund
+END;
+/
+
+--------------------------------------------------------------------------------
+-- D. AUTO-RECIPROCAL FAMILY RELATIONSHIP TRIGGER
+-- When a User_Family request Status changes to 'ACCEPTED', automatically
+-- create the symmetric/reciprocal relationship (B -> A) if it doesn't exist,
+-- or update it to 'ACCEPTED' if it already exists.
+-- 
+-- This eliminates manual reciprocal handling in application code.
+--------------------------------------------------------------------------------
+CREATE OR REPLACE TRIGGER TRG_Auto_Reciprocal_Family
+AFTER UPDATE OF Status ON User_Family
+FOR EACH ROW
+WHEN (NEW.Status = 'ACCEPTED' AND OLD.Status = 'PENDING')
+DECLARE
+    v_Exists NUMBER;
+BEGIN
+    -- Check if reciprocal relationship already exists
+    SELECT COUNT(*) INTO v_Exists
+    FROM User_Family
+    WHERE User_ID = :NEW.Family_User_ID
+    AND Family_User_ID = :NEW.User_ID;
+    
+    IF v_Exists = 0 THEN
+        -- Insert new reciprocal relationship
+        INSERT INTO User_Family (User_ID, Family_User_ID, Relationship, Status, Created_At)
+        VALUES (:NEW.Family_User_ID, :NEW.User_ID, :NEW.Relationship, 'ACCEPTED', SYSTIMESTAMP);
+    ELSE
+        -- Update existing reciprocal relationship to ACCEPTED
+        UPDATE User_Family
+        SET Status = 'ACCEPTED', Relationship = :NEW.Relationship
+        WHERE User_ID = :NEW.Family_User_ID
+        AND Family_User_ID = :NEW.User_ID
+        AND Status != 'ACCEPTED';  -- Avoid redundant updates
+    END IF;
 END;
 /

@@ -11,6 +11,12 @@ from ticket_generator import TicketGenerator
 import hashlib
 import secrets
 
+# Import Oracle driver for stored procedure calls
+try:
+    import oracledb
+except ImportError:
+    import cx_Oracle as oracledb
+
 app = Flask(__name__)
 app.secret_key = 'your_secret_key_here'  # Required for sessions
 
@@ -1492,32 +1498,13 @@ def api_family_respond():
             conn.commit()
             return jsonify({'success': True, 'message': 'Family request rejected'})
         
-        # ACCEPT: Update the original row and insert reciprocal
+        # ACCEPT: Update the original row - trigger handles reciprocal automatically
+        # TRG_Auto_Reciprocal_Family will create/update the reciprocal relationship
         cursor.execute("""
             UPDATE User_Family 
             SET Status = 'ACCEPTED'
             WHERE User_ID = :requesting_id AND Family_User_ID = :user_id
         """, requesting_id=requesting_user_id, user_id=user_id)
-        
-        # Check if reciprocal row already exists
-        cursor.execute("""
-            SELECT 1 FROM User_Family 
-            WHERE User_ID = :user_id AND Family_User_ID = :requesting_id
-        """, user_id=user_id, requesting_id=requesting_user_id)
-        
-        if not cursor.fetchone():
-            # Insert reciprocal relationship
-            cursor.execute("""
-                INSERT INTO User_Family (User_ID, Family_User_ID, Relationship, Status, Created_At)
-                VALUES (:user_id, :requesting_id, :relationship, 'ACCEPTED', SYSTIMESTAMP)
-            """, user_id=user_id, requesting_id=requesting_user_id, relationship=relationship)
-        else:
-            # Update existing reciprocal row to accepted
-            cursor.execute("""
-                UPDATE User_Family 
-                SET Status = 'ACCEPTED', Relationship = :relationship
-                WHERE User_ID = :user_id AND Family_User_ID = :requesting_id
-            """, user_id=user_id, requesting_id=requesting_user_id, relationship=relationship)
         
         conn.commit()
         return jsonify({'success': True, 'message': 'Family request accepted!'})
@@ -3115,6 +3102,14 @@ def process_booking_action():
         return redirect_to_reschedule(selected_reservations[0])  # Start with first reservation
 
 def cancel_reservations(reservation_ids, booking_id, email):
+    """
+    Cancel multiple reservations using USP_Cancel_Reservation stored procedure.
+    The procedure handles:
+    - Refund calculation via FN_Calculate_Refund (80% if >24h before departure)
+    - Updating Ticket_Status to CANCELLED
+    - Freeing seats (Row_Number/Seat_Letter = NULL)
+    - Triggers handle booking status update and logging automatically
+    """
     conn = get_connection()
     cursor = conn.cursor()
     
@@ -3122,59 +3117,23 @@ def cancel_reservations(reservation_ids, booking_id, email):
         total_refund = 0
         
         for res_id in reservation_ids:
-            # Get reservation details for cancellation log - UPDATED
-            cursor.execute("""
-                SELECT r.Price_Charged, r.Passenger_ID, r.Instance_ID
-                FROM Reservation r
-                WHERE r.Reservation_ID = :res_id
-            """, res_id=res_id)
+            # Call stored procedure - it handles all cancellation logic
+            refund_amount = cursor.var(oracledb.NUMBER)
+            success = cursor.var(oracledb.NUMBER)
             
-            res_details = cursor.fetchone()
-            if res_details:
-                seat_cost = float(res_details[0])
-                passenger_id = res_details[1]
-                instance_id = res_details[2]
-                
-                # Calculate refund (example: 80% refund if cancelled more than 24 hours before flight)
-                cursor.execute("""
-                    SELECT Departure_Time FROM Flight_Instance WHERE Instance_ID = :instance_id
-                """, instance_id=instance_id)
-                departure_time = cursor.fetchone()[0]
-                hours_until_flight = (departure_time - datetime.now()).total_seconds() / 3600
-                
-                refund_eligible = 'Y' if hours_until_flight > 24 else 'N'
-                refund_amount = seat_cost * 0.8 if refund_eligible == 'Y' else 0
-                total_refund += refund_amount
-                
-                # Delete reservation (cascade will handle related data)
-                cursor.execute("""
-                    DELETE FROM Reservation 
-                    WHERE Reservation_ID = :res_id
-                """, res_id=res_id)
-                
-                # Log cancellation - UPDATED
-                cursor.execute("SELECT COUNT(*) FROM Cancellation_Log")
-                log_id = cursor.fetchone()[0] + 1
-                
-                cursor.execute("""
-                    INSERT INTO Cancellation_Log 
-                    (Log_ID, Booking_ID, Cancel_Date, Reason)
-                    VALUES (:log_id, :booking_id, SYSTIMESTAMP, 'Customer initiated cancellation')
-                """, log_id=log_id, booking_id=booking_id)
+            cursor.callproc('USP_Cancel_Reservation', [
+                res_id,           # p_Reservation_ID
+                refund_amount,    # p_Refund_Amount OUT
+                success           # p_Success OUT
+            ])
+            
+            # Check if cancellation was successful
+            if success.getvalue() == 1:
+                total_refund += float(refund_amount.getvalue() or 0)
+            else:
+                raise Exception(f"Failed to cancel reservation {res_id}")
         
-        # Update booking status if all reservations are cancelled
-        cursor.execute("""
-            SELECT COUNT(*) FROM Reservation 
-            WHERE Booking_ID = :booking_id
-        """, booking_id=booking_id)
-        
-        active_reservations = cursor.fetchone()[0]
-        if active_reservations == 0:
-            cursor.execute("""
-                UPDATE Booking SET Booking_Status = 'CANCELLED' 
-                WHERE Booking_ID = :booking_id
-            """, booking_id=booking_id)
-        
+        # Commit all cancellations as a single transaction
         conn.commit()
         
         # Clear session
