@@ -196,6 +196,11 @@ CREATE SEQUENCE Passenger_Seq START WITH 1 INCREMENT BY 1;
 -- IAT = IAT Airlines code, YYYYMMDD = date, NNNNNN = 6-digit sequential number
 CREATE SEQUENCE Reservation_Seq START WITH 100001 INCREMENT BY 1 MAXVALUE 999999 CYCLE NOCACHE;
 
+-- BOOKING ID SEQUENCE
+-- Generates sequential booking IDs (PNRs) in deterministic format
+-- Used by Generate_PNR function for guaranteed unique booking IDs
+CREATE SEQUENCE Booking_Seq START WITH 1 INCREMENT BY 1 MAXVALUE 999999 CYCLE NOCACHE;
+
 CREATE TABLE Passenger (
     Passenger_ID   NUMBER DEFAULT Passenger_Seq.NEXTVAL PRIMARY KEY,
     
@@ -801,3 +806,101 @@ EXCEPTION
 END;
 /
 
+--------------------------------------------------------------------------------
+-- 11. RESERVATION CANCELLATION PROCEDURE
+-- Cancels a reservation and calculates refund based on cancellation policy.
+-- 
+-- CANCELLATION POLICY:
+-- - Within 24 hours of booking: 75% refund
+-- - After 24 hours of booking: 100% refund
+-- 
+-- This procedure also:
+-- 1. Updates reservation status to CANCELLED
+-- 2. Logs the cancellation
+-- 3. Updates booking status to CANCELLED if all reservations are cancelled
+--------------------------------------------------------------------------------
+CREATE OR REPLACE PROCEDURE USP_Cancel_Reservation (
+    p_Reservation_ID IN VARCHAR2,
+    p_Refund_Amount OUT NUMBER,
+    p_Success OUT NUMBER
+) AS
+    v_Booking_ID VARCHAR2(6);
+    v_Booking_Date TIMESTAMP;
+    v_Price_Charged NUMBER(10,2);
+    v_Hours_Since_Booking NUMBER;
+    v_Ticket_Status VARCHAR2(20);
+    v_Total_Reservations NUMBER;
+    v_Cancelled_Reservations NUMBER;
+    v_Log_ID NUMBER;
+BEGIN
+    -- Initialize output parameters
+    p_Success := 0;
+    p_Refund_Amount := 0;
+    
+    -- 1. Get reservation details
+    BEGIN
+        SELECT r.Booking_ID, r.Price_Charged, r.Ticket_Status, b.Booking_Date
+        INTO v_Booking_ID, v_Price_Charged, v_Ticket_Status, v_Booking_Date
+        FROM Reservation r
+        JOIN Booking b ON r.Booking_ID = b.Booking_ID
+        WHERE r.Reservation_ID = p_Reservation_ID;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            RAISE_APPLICATION_ERROR(-20200, 'Reservation not found: ' || p_Reservation_ID);
+    END;
+    
+    -- 2. Check if already cancelled
+    IF v_Ticket_Status = 'CANCELLED' THEN
+        RAISE_APPLICATION_ERROR(-20201, 'Reservation already cancelled');
+    END IF;
+    
+    -- 3. Calculate hours since booking (FIXED)
+    v_Hours_Since_Booking := EXTRACT(DAY FROM (SYSTIMESTAMP - v_Booking_Date)) * 24 
+                           + EXTRACT(HOUR FROM (SYSTIMESTAMP - v_Booking_Date))
+                           + EXTRACT(MINUTE FROM (SYSTIMESTAMP - v_Booking_Date)) / 60;
+    
+    -- 4. Calculate refund based on policy
+    IF v_Hours_Since_Booking <= 24 THEN
+        p_Refund_Amount := v_Price_Charged * 0.75;  -- 75% refund within 24h
+    ELSE
+        p_Refund_Amount := v_Price_Charged;  -- 100% refund after 24h
+    END IF;
+    
+    -- 5. Update reservation status to CANCELLED
+    UPDATE Reservation
+    SET Ticket_Status = 'CANCELLED'
+    WHERE Reservation_ID = p_Reservation_ID;
+    
+    -- 6. Log the cancellation
+    SELECT NVL(MAX(Log_ID), 0) + 1 INTO v_Log_ID FROM Cancellation_Log;
+    INSERT INTO Cancellation_Log (Log_ID, Booking_ID, Cancel_Date, Reason)
+    VALUES (v_Log_ID, v_Booking_ID, SYSTIMESTAMP, 'Cancelled via USP_Cancel_Reservation');
+    
+    -- 7. Check if all reservations in booking are cancelled
+    SELECT COUNT(*) INTO v_Total_Reservations
+    FROM Reservation
+    WHERE Booking_ID = v_Booking_ID;
+    
+    SELECT COUNT(*) INTO v_Cancelled_Reservations
+    FROM Reservation
+    WHERE Booking_ID = v_Booking_ID
+    AND Ticket_Status = 'CANCELLED';
+    
+    -- 8. If all reservations cancelled, update booking status
+    IF v_Total_Reservations = v_Cancelled_Reservations THEN
+        UPDATE Booking
+        SET Booking_Status = 'CANCELLED'
+        WHERE Booking_ID = v_Booking_ID;
+    END IF;
+    
+    -- 9. Success
+    p_Success := 1;
+    COMMIT;
+    
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+        p_Success := 0;
+        RAISE;
+END;
+/

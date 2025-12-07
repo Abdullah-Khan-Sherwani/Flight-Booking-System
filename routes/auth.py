@@ -232,9 +232,9 @@ def account_info():
         """, user_id=session['user_id'])
         booking_count = cursor.fetchone()[0]
         
-        # Get upcoming flights
+        # Get upcoming flights (count distinct flight instances, not reservations)
         cursor.execute("""
-            SELECT COUNT(*) 
+            SELECT COUNT(DISTINCT fi.Instance_ID) 
             FROM Reservation r
             JOIN Booking b ON r.Booking_ID = b.Booking_ID
             JOIN Flight_Instance fi ON r.Instance_ID = fi.Instance_ID
