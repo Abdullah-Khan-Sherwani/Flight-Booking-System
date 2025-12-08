@@ -1019,3 +1019,313 @@ BEGIN
     END IF;
 END;
 /
+
+--------------------------------------------------------------------------------
+-- E. BOOKING CREATION STORED PROCEDURES
+-- Comprehensive procedures to handle entire booking creation flow
+-- Moved from Python app.py to database for better performance and atomicity
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+-- USP_Get_Or_Create_Passenger
+-- Handles passenger logic: finds existing or creates new passenger
+-- Returns: Passenger_ID (existing or newly created)
+--
+-- Parameters:
+--   p_Existing_Passenger_ID: Pre-selected passenger ID (from "Add from Past Bookings")
+--   p_Linked_User_ID: User ID if this is the user's own profile
+--   p_Is_Self: TRUE if user is adding themselves
+--   p_First_Name, p_Last_Name, p_DOB, p_Gender, p_Passport, p_Title: Passenger details
+--   p_Check_Match: If TRUE, compare submitted vs stored data to detect modifications
+--
+-- Logic:
+-- 1. If p_Existing_Passenger_ID provided AND details match stored -> reuse
+-- 2. If p_Existing_Passenger_ID provided BUT details modified -> create NEW (protect stored profile)
+-- 3. If p_Is_Self AND user has linked profile AND details match -> reuse
+-- 4. If p_Is_Self AND no linked profile -> create NEW linked to user
+-- 5. Otherwise -> create NEW unlinked passenger
+--------------------------------------------------------------------------------
+CREATE OR REPLACE PROCEDURE USP_Get_Or_Create_Passenger (
+    p_Existing_Passenger_ID IN NUMBER DEFAULT NULL,
+    p_Linked_User_ID        IN NUMBER DEFAULT NULL,
+    p_Is_Self               IN NUMBER DEFAULT 0,  -- 0=false, 1=true (Oracle doesn't have BOOLEAN for params)
+    p_First_Name            IN VARCHAR2,
+    p_Last_Name             IN VARCHAR2,
+    p_DOB                   IN DATE,
+    p_Gender                IN VARCHAR2,
+    p_Passport              IN VARCHAR2,
+    p_Title                 IN VARCHAR2,
+    p_Out_Passenger_ID      OUT NUMBER
+) AS
+    v_Stored_FirstName   VARCHAR2(50);
+    v_Stored_LastName    VARCHAR2(50);
+    v_Stored_DOB         DATE;
+    v_Stored_Gender      VARCHAR2(20);
+    v_Stored_Passport    VARCHAR2(20);
+    v_Details_Match      NUMBER := 0;
+    v_Existing_Linked_ID NUMBER;
+BEGIN
+    -- CASE 1: Existing Passenger ID provided (from "Add from Past Bookings" or pre-selected)
+    IF p_Existing_Passenger_ID IS NOT NULL THEN
+        -- Fetch stored passenger details
+        BEGIN
+            SELECT First_Name, Last_Name, Date_Of_Birth, Gender, Passport_Num
+            INTO v_Stored_FirstName, v_Stored_LastName, v_Stored_DOB, v_Stored_Gender, v_Stored_Passport
+            FROM Passenger
+            WHERE Passenger_ID = p_Existing_Passenger_ID;
+            
+            -- Compare key identity fields (name, gender, DOB must match)
+            IF UPPER(v_Stored_FirstName) = UPPER(p_First_Name)
+               AND UPPER(v_Stored_LastName) = UPPER(p_Last_Name)
+               AND UPPER(v_Stored_Gender) = UPPER(p_Gender)
+               AND TRUNC(v_Stored_DOB) = TRUNC(p_DOB)
+            THEN
+                v_Details_Match := 1;
+            END IF;
+            
+            IF v_Details_Match = 1 THEN
+                -- Details UNCHANGED - safe to reuse existing passenger
+                p_Out_Passenger_ID := p_Existing_Passenger_ID;
+                
+                -- Only update passport if it changed (minor update allowed)
+                IF NVL(v_Stored_Passport, '') != NVL(p_Passport, '') THEN
+                    UPDATE Passenger SET Passport_Num = p_Passport
+                    WHERE Passenger_ID = p_Existing_Passenger_ID;
+                END IF;
+                
+                RETURN;
+            END IF;
+            
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                NULL; -- Passenger not found, will create new
+        END;
+    END IF;
+    
+    -- CASE 2: User clicked "Add Myself" - check for linked profile
+    IF p_Is_Self = 1 AND p_Linked_User_ID IS NOT NULL AND UPPER(p_Title) NOT IN ('INF', 'CHD') THEN
+        BEGIN
+            SELECT Passenger_ID, First_Name, Last_Name, Date_Of_Birth, Gender, Passport_Num
+            INTO v_Existing_Linked_ID, v_Stored_FirstName, v_Stored_LastName, v_Stored_DOB, v_Stored_Gender, v_Stored_Passport
+            FROM Passenger
+            WHERE Linked_User_ID = p_Linked_User_ID;
+            
+            -- Compare key identity fields
+            IF UPPER(v_Stored_FirstName) = UPPER(p_First_Name)
+               AND UPPER(v_Stored_LastName) = UPPER(p_Last_Name)
+               AND UPPER(v_Stored_Gender) = UPPER(p_Gender)
+               AND TRUNC(v_Stored_DOB) = TRUNC(p_DOB)
+            THEN
+                -- Details match - reuse linked profile
+                p_Out_Passenger_ID := v_Existing_Linked_ID;
+                
+                -- Update passport if changed
+                IF NVL(v_Stored_Passport, '') != NVL(p_Passport, '') THEN
+                    UPDATE Passenger SET Passport_Num = p_Passport
+                    WHERE Passenger_ID = v_Existing_Linked_ID;
+                END IF;
+                
+                RETURN;
+            END IF;
+            -- Details modified - fall through to create NEW unlinked passenger
+            
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                -- No linked profile exists - create NEW linked profile
+                INSERT INTO Passenger (Linked_User_ID, First_Name, Last_Name, Date_Of_Birth, Gender, Passport_Num, Title)
+                VALUES (p_Linked_User_ID, p_First_Name, p_Last_Name, p_DOB, p_Gender, p_Passport, p_Title)
+                RETURNING Passenger_ID INTO p_Out_Passenger_ID;
+                
+                RETURN;
+        END;
+    END IF;
+    
+    -- CASE 3: Guest/additional passenger, details modified, or infant
+    -- Create NEW unlinked passenger
+    INSERT INTO Passenger (First_Name, Last_Name, Date_Of_Birth, Gender, Passport_Num, Title)
+    VALUES (p_First_Name, p_Last_Name, p_DOB, p_Gender, p_Passport, p_Title)
+    RETURNING Passenger_ID INTO p_Out_Passenger_ID;
+    
+END;
+/
+
+--------------------------------------------------------------------------------
+-- USP_Create_Booking
+-- Main procedure to create a booking with auto-generated PNR
+-- Returns: Booking_ID (PNR code)
+--
+-- Note: Booking trigger TRG_Generate_Booking_PNR auto-generates the PNR
+--------------------------------------------------------------------------------
+CREATE OR REPLACE PROCEDURE USP_Create_Booking (
+    p_Lead_User_ID     IN NUMBER DEFAULT NULL,  -- NULL for guest bookings
+    p_Contact_Email    IN VARCHAR2,
+    p_Emergency_Phone  IN VARCHAR2,
+    p_Out_Booking_ID   OUT VARCHAR2
+) AS
+BEGIN
+    IF p_Lead_User_ID IS NOT NULL THEN
+        -- Logged-in user booking
+        INSERT INTO Booking (Lead_User_ID, Booking_Date, Booking_Status, Contact_Email, Emergency_Phone)
+        VALUES (p_Lead_User_ID, SYSTIMESTAMP, 'CONFIRMED', p_Contact_Email, p_Emergency_Phone)
+        RETURNING Booking_ID INTO p_Out_Booking_ID;
+    ELSE
+        -- Guest booking
+        INSERT INTO Booking (Booking_Date, Booking_Status, Contact_Email, Emergency_Phone)
+        VALUES (SYSTIMESTAMP, 'CONFIRMED', p_Contact_Email, p_Emergency_Phone)
+        RETURNING Booking_ID INTO p_Out_Booking_ID;
+    END IF;
+END;
+/
+
+--------------------------------------------------------------------------------
+-- USP_Create_Single_Reservation
+-- Creates one reservation for a passenger on a flight
+-- Handles pricing calculation using existing functions (FN_Get_Infant_Price)
+--
+-- Parameters:
+--   p_Booking_ID: The booking this reservation belongs to
+--   p_Passenger_ID: The passenger
+--   p_Instance_ID: The flight instance
+--   p_Row_Number: Seat row (NULL for lap infants)
+--   p_Seat_Letter: Seat letter (NULL for lap infants)
+--   p_Travel_Class: ECO/BUS/FIR for pricing
+--   p_Passenger_Type: ADULT/LAP_INFANT/SEATED_INFANT
+--
+-- Returns: Reservation_ID (ticket number), Price charged
+--
+-- NOTE: Uses FN_Get_Infant_Price for infant pricing consistency.
+--       TRG_Infant_Booking_Rules trigger also validates and auto-corrects prices.
+--------------------------------------------------------------------------------
+CREATE OR REPLACE PROCEDURE USP_Create_Single_Reservation (
+    p_Booking_ID      IN VARCHAR2,
+    p_Passenger_ID    IN NUMBER,
+    p_Instance_ID     IN VARCHAR2,
+    p_Row_Number      IN NUMBER DEFAULT NULL,
+    p_Seat_Letter     IN CHAR DEFAULT NULL,
+    p_Travel_Class    IN VARCHAR2 DEFAULT 'ECO',
+    p_Passenger_Type  IN VARCHAR2 DEFAULT 'ADULT',
+    p_Out_Res_ID      OUT VARCHAR2,
+    p_Out_Price       OUT NUMBER
+) AS
+    v_Route_ID     VARCHAR2(20);
+    v_Base_Price   NUMBER(10,2);
+    v_Price        NUMBER(10,2);
+    v_Res_ID       VARCHAR2(20);
+BEGIN
+    -- Generate Reservation ID using sequence
+    SELECT 'IAT-' || TO_CHAR(SYSDATE, 'YYYYMMDD') || '-' || LPAD(Reservation_Seq.NEXTVAL, 6, '0')
+    INTO v_Res_ID FROM DUAL;
+    
+    -- Get route for pricing
+    SELECT fr.Route_ID INTO v_Route_ID
+    FROM Flight_Instance fi
+    JOIN Flight_Route fr ON fi.Route_ID = fr.Route_ID
+    WHERE fi.Instance_ID = p_Instance_ID;
+    
+    -- Calculate price based on passenger type
+    -- Use FN_Get_Infant_Price for infant types to maintain consistency
+    IF p_Passenger_Type IN ('LAP_INFANT', 'SEATED_INFANT') THEN
+        -- Use existing function for infant pricing
+        v_Price := FN_Get_Infant_Price(p_Instance_ID, p_Passenger_Type, p_Travel_Class);
+    ELSE
+        -- ADULT: Get base price from Route_Pricing
+        BEGIN
+            SELECT Base_Price INTO v_Base_Price
+            FROM Route_Pricing
+            WHERE Route_ID = v_Route_ID
+            AND Class_ID = p_Travel_Class
+            AND SYSDATE BETWEEN Valid_From AND Valid_To;
+            
+            v_Price := v_Base_Price;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                -- Default prices if no pricing found
+                v_Price := CASE p_Travel_Class
+                    WHEN 'ECO' THEN 100
+                    WHEN 'BUS' THEN 300
+                    WHEN 'FIR' THEN 500
+                    ELSE 100
+                END;
+        END;
+    END IF;
+    
+    -- Insert reservation
+    -- NOTE: TRG_Infant_Booking_Rules trigger will validate and may auto-correct price
+    INSERT INTO Reservation (
+        Reservation_ID, Booking_ID, Passenger_ID, Instance_ID,
+        Row_Number, Seat_Letter, Price_Charged, Passenger_Type, Ticket_Status
+    ) VALUES (
+        v_Res_ID, p_Booking_ID, p_Passenger_ID, p_Instance_ID,
+        p_Row_Number, p_Seat_Letter, v_Price, p_Passenger_Type, 'ISSUED'
+    );
+    
+    p_Out_Res_ID := v_Res_ID;
+    p_Out_Price := v_Price;
+END;
+/
+
+--------------------------------------------------------------------------------
+-- USP_Create_Payment
+-- Creates payment record for a booking
+--------------------------------------------------------------------------------
+CREATE OR REPLACE PROCEDURE USP_Create_Payment (
+    p_Booking_ID      IN VARCHAR2,
+    p_Amount          IN NUMBER,
+    p_Payment_Method  IN VARCHAR2 DEFAULT 'CREDIT_CARD',
+    p_Out_Payment_ID  OUT VARCHAR2
+) AS
+    v_Payment_ID VARCHAR2(20);
+BEGIN
+    -- Generate Payment ID
+    SELECT 'PAY' || TO_CHAR(SYSTIMESTAMP, 'YYYYMMDDHH24MISS') || '_' || Booking_Seq.NEXTVAL
+    INTO v_Payment_ID FROM DUAL;
+    
+    INSERT INTO Payment (Payment_ID, Booking_ID, Amount_Paid, Payment_Date, Payment_Method)
+    VALUES (v_Payment_ID, p_Booking_ID, p_Amount, SYSTIMESTAMP, p_Payment_Method);
+    
+    p_Out_Payment_ID := v_Payment_ID;
+END;
+/
+
+--------------------------------------------------------------------------------
+-- USP_Complete_Booking
+-- Comprehensive procedure that creates complete booking in one atomic transaction
+-- This is the main entry point called from Python
+--
+-- Type for passenger data array (must be created before procedure)
+--------------------------------------------------------------------------------
+
+-- Create passenger data type for array input
+CREATE OR REPLACE TYPE T_Passenger_Record AS OBJECT (
+    Existing_Passenger_ID NUMBER,
+    Is_Self               NUMBER,  -- 0=false, 1=true
+    First_Name            VARCHAR2(50),
+    Last_Name             VARCHAR2(50),
+    DOB                   VARCHAR2(10),  -- 'YYYY-MM-DD' format
+    Gender                VARCHAR2(20),
+    Passport              VARCHAR2(20),
+    Title                 VARCHAR2(10),
+    Outbound_Seat         VARCHAR2(10),  -- e.g., '10A' or 'INFANT'
+    Return_Seat           VARCHAR2(10)   -- e.g., '10A' or 'INFANT' or NULL
+);
+/
+
+CREATE OR REPLACE TYPE T_Passenger_List AS TABLE OF T_Passenger_Record;
+/
+
+--------------------------------------------------------------------------------
+-- USP_Get_Booking_Total
+-- Utility to get total amount for a booking from reservations
+--------------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION FN_Get_Booking_Total(
+    p_Booking_ID IN VARCHAR2
+) RETURN NUMBER IS
+    v_Total NUMBER(10,2);
+BEGIN
+    SELECT NVL(SUM(Price_Charged), 0) INTO v_Total
+    FROM Reservation
+    WHERE Booking_ID = p_Booking_ID;
+    
+    RETURN v_Total;
+END;
+/
