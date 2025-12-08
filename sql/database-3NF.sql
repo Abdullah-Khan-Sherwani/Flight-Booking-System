@@ -253,16 +253,11 @@ CREATE TABLE Reservation (
     Ticket_Status  VARCHAR2(20) DEFAULT 'ISSUED'
                    CHECK (Ticket_Status IN ('ISSUED', 'CHECKED_IN', 'BOARDED', 'NO_SHOW', 'CANCELLED')),
 
-    -- LOGICAL RULES:
-    -- Unique Constraint handles NULLs intelligently in Oracle.
-    -- It prevents two people from having "Row 10, Seat A".
-    -- But it allows multiple Infants to have "NULL, NULL" (because NULL != NULL).
-
-    -- 1. No Double Booking: A seat on a specific flight can only be held once.
-    CONSTRAINT UQ_Seat_Instance UNIQUE (Instance_ID, Row_Number, Seat_Letter),
+    -- No Double Booking: A seat on a specific flight can only be held once.
+    CONSTRAINT UQ_Seat_Instance UNIQUE (Instance_ID, Row_Number, Seat_Letter)
     
-    -- 2. No Duplicate Traveler: The same person cannot be on the same flight twice.
-    CONSTRAINT UQ_Pass_Instance UNIQUE (Passenger_ID, Instance_ID)
+    -- NOTE: UQ_Pass_Instance constraint REMOVED to allow re-booking after cancellation.
+    -- The same passenger CAN have multiple reservations on the same flight if previous ones are cancelled.
 );
 
 CREATE TABLE Payment (
@@ -878,41 +873,88 @@ END;
 --------------------------------------------------------------------------------
 
 --------------------------------------------------------------------------------
--- A. AUTO-CANCEL BOOKING TRIGGER
+-- A. AUTO-CANCEL BOOKING TRIGGER (COMPOUND TRIGGER)
 -- When all reservations in a booking have Ticket_Status = 'CANCELLED',
 -- automatically update Booking.Booking_Status to 'CANCELLED'.
 -- This eliminates the need for manual booking status updates in application code.
+--
+-- NOTE: Uses COMPOUND TRIGGER to avoid ORA-04091 mutating table error.
+-- The row-level section collects affected booking IDs, and the statement-level
+-- section processes them after the triggering statement completes.
 --------------------------------------------------------------------------------
 CREATE OR REPLACE TRIGGER TRG_Auto_Cancel_Booking
-AFTER UPDATE OF Ticket_Status ON Reservation
-FOR EACH ROW
-WHEN (NEW.Ticket_Status = 'CANCELLED')
-DECLARE
-    v_Booking_ID VARCHAR2(6);
-    v_Total_Reservations NUMBER;
-    v_Cancelled_Reservations NUMBER;
-BEGIN
-    v_Booking_ID := :NEW.Booking_ID;
-    
-    -- Count total reservations in this booking
-    SELECT COUNT(*) INTO v_Total_Reservations
-    FROM Reservation
-    WHERE Booking_ID = v_Booking_ID;
-    
-    -- Count cancelled reservations in this booking
-    SELECT COUNT(*) INTO v_Cancelled_Reservations
-    FROM Reservation
-    WHERE Booking_ID = v_Booking_ID
-    AND Ticket_Status = 'CANCELLED';
-    
-    -- If all reservations are cancelled, update booking status
-    IF v_Total_Reservations = v_Cancelled_Reservations THEN
-        UPDATE Booking
-        SET Booking_Status = 'CANCELLED'
-        WHERE Booking_ID = v_Booking_ID
-        AND Booking_Status != 'CANCELLED';  -- Avoid redundant updates
-    END IF;
-END;
+FOR UPDATE OF Ticket_Status ON Reservation
+COMPOUND TRIGGER
+
+    -- Package-level collection to store affected booking IDs
+    TYPE t_Booking_List IS TABLE OF VARCHAR2(6) INDEX BY PLS_INTEGER;
+    g_Booking_IDs t_Booking_List;
+    g_Index PLS_INTEGER := 0;
+
+    -- AFTER EACH ROW: Collect booking IDs where status changed to CANCELLED
+    AFTER EACH ROW IS
+    BEGIN
+        IF :NEW.Ticket_Status = 'CANCELLED' AND 
+           (:OLD.Ticket_Status IS NULL OR :OLD.Ticket_Status != 'CANCELLED') THEN
+            g_Index := g_Index + 1;
+            g_Booking_IDs(g_Index) := :NEW.Booking_ID;
+        END IF;
+    END AFTER EACH ROW;
+
+    -- AFTER STATEMENT: Process collected booking IDs (no mutating table issue)
+    AFTER STATEMENT IS
+        v_Total_Reservations NUMBER;
+        v_Cancelled_Reservations NUMBER;
+        v_Booking_ID VARCHAR2(6);
+        v_Processed_Bookings t_Booking_List;
+        v_Processed_Index PLS_INTEGER := 0;
+        v_Already_Processed BOOLEAN;
+    BEGIN
+        -- Process each collected booking ID (deduplicate)
+        FOR i IN 1..g_Index LOOP
+            v_Booking_ID := g_Booking_IDs(i);
+            
+            -- Check if already processed (avoid duplicates)
+            v_Already_Processed := FALSE;
+            FOR j IN 1..v_Processed_Index LOOP
+                IF v_Processed_Bookings(j) = v_Booking_ID THEN
+                    v_Already_Processed := TRUE;
+                    EXIT;
+                END IF;
+            END LOOP;
+            
+            IF NOT v_Already_Processed THEN
+                -- Mark as processed
+                v_Processed_Index := v_Processed_Index + 1;
+                v_Processed_Bookings(v_Processed_Index) := v_Booking_ID;
+                
+                -- Count total reservations in this booking
+                SELECT COUNT(*) INTO v_Total_Reservations
+                FROM Reservation
+                WHERE Booking_ID = v_Booking_ID;
+                
+                -- Count cancelled reservations in this booking
+                SELECT COUNT(*) INTO v_Cancelled_Reservations
+                FROM Reservation
+                WHERE Booking_ID = v_Booking_ID
+                AND Ticket_Status = 'CANCELLED';
+                
+                -- If all reservations are cancelled, update booking status
+                IF v_Total_Reservations = v_Cancelled_Reservations THEN
+                    UPDATE Booking
+                    SET Booking_Status = 'CANCELLED'
+                    WHERE Booking_ID = v_Booking_ID
+                    AND Booking_Status != 'CANCELLED';  -- Avoid redundant updates
+                END IF;
+            END IF;
+        END LOOP;
+        
+        -- Reset collection for next statement
+        g_Booking_IDs.DELETE;
+        g_Index := 0;
+    END AFTER STATEMENT;
+
+END TRG_Auto_Cancel_Booking;
 /
 
 --------------------------------------------------------------------------------
@@ -1051,7 +1093,7 @@ CREATE OR REPLACE PROCEDURE USP_Get_Or_Create_Passenger (
     p_Is_Self               IN NUMBER DEFAULT 0,  -- 0=false, 1=true (Oracle doesn't have BOOLEAN for params)
     p_First_Name            IN VARCHAR2,
     p_Last_Name             IN VARCHAR2,
-    p_DOB                   IN DATE,
+    p_DOB                   IN VARCHAR2,  -- Accepts 'YYYY-MM-DD' string format from Python
     p_Gender                IN VARCHAR2,
     p_Passport              IN VARCHAR2,
     p_Title                 IN VARCHAR2,
@@ -1064,6 +1106,7 @@ CREATE OR REPLACE PROCEDURE USP_Get_Or_Create_Passenger (
     v_Stored_Passport    VARCHAR2(20);
     v_Details_Match      NUMBER := 0;
     v_Existing_Linked_ID NUMBER;
+    v_DOB_Date           DATE := TO_DATE(p_DOB, 'YYYY-MM-DD');  -- Convert string to DATE
 BEGIN
     -- CASE 1: Existing Passenger ID provided (from "Add from Past Bookings" or pre-selected)
     IF p_Existing_Passenger_ID IS NOT NULL THEN
@@ -1078,7 +1121,7 @@ BEGIN
             IF UPPER(v_Stored_FirstName) = UPPER(p_First_Name)
                AND UPPER(v_Stored_LastName) = UPPER(p_Last_Name)
                AND UPPER(v_Stored_Gender) = UPPER(p_Gender)
-               AND TRUNC(v_Stored_DOB) = TRUNC(p_DOB)
+               AND TRUNC(v_Stored_DOB) = TRUNC(v_DOB_Date)
             THEN
                 v_Details_Match := 1;
             END IF;
@@ -1114,7 +1157,7 @@ BEGIN
             IF UPPER(v_Stored_FirstName) = UPPER(p_First_Name)
                AND UPPER(v_Stored_LastName) = UPPER(p_Last_Name)
                AND UPPER(v_Stored_Gender) = UPPER(p_Gender)
-               AND TRUNC(v_Stored_DOB) = TRUNC(p_DOB)
+               AND TRUNC(v_Stored_DOB) = TRUNC(v_DOB_Date)
             THEN
                 -- Details match - reuse linked profile
                 p_Out_Passenger_ID := v_Existing_Linked_ID;
@@ -1133,7 +1176,7 @@ BEGIN
             WHEN NO_DATA_FOUND THEN
                 -- No linked profile exists - create NEW linked profile
                 INSERT INTO Passenger (Linked_User_ID, First_Name, Last_Name, Date_Of_Birth, Gender, Passport_Num, Title)
-                VALUES (p_Linked_User_ID, p_First_Name, p_Last_Name, p_DOB, p_Gender, p_Passport, p_Title)
+                VALUES (p_Linked_User_ID, p_First_Name, p_Last_Name, v_DOB_Date, p_Gender, p_Passport, p_Title)
                 RETURNING Passenger_ID INTO p_Out_Passenger_ID;
                 
                 RETURN;
@@ -1143,7 +1186,7 @@ BEGIN
     -- CASE 3: Guest/additional passenger, details modified, or infant
     -- Create NEW unlinked passenger
     INSERT INTO Passenger (First_Name, Last_Name, Date_Of_Birth, Gender, Passport_Num, Title)
-    VALUES (p_First_Name, p_Last_Name, p_DOB, p_Gender, p_Passport, p_Title)
+    VALUES (p_First_Name, p_Last_Name, v_DOB_Date, p_Gender, p_Passport, p_Title)
     RETURNING Passenger_ID INTO p_Out_Passenger_ID;
     
 END;
@@ -1294,6 +1337,21 @@ END;
 --
 -- Type for passenger data array (must be created before procedure)
 --------------------------------------------------------------------------------
+
+-- Drop existing types in correct order (dependent first, then base)
+BEGIN
+    EXECUTE IMMEDIATE 'DROP TYPE T_Passenger_List FORCE';
+EXCEPTION
+    WHEN OTHERS THEN NULL;  -- Type doesn't exist, that's OK
+END;
+/
+
+BEGIN
+    EXECUTE IMMEDIATE 'DROP TYPE T_Passenger_Record FORCE';
+EXCEPTION
+    WHEN OTHERS THEN NULL;  -- Type doesn't exist, that's OK
+END;
+/
 
 -- Create passenger data type for array input
 CREATE OR REPLACE TYPE T_Passenger_Record AS OBJECT (
