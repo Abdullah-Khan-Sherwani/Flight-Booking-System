@@ -20,6 +20,14 @@ BEGIN
 END;
 /
 
+-- Drop packages (for recursion prevention flags)
+BEGIN
+    FOR pkg IN (SELECT object_name FROM user_objects WHERE object_type = 'PACKAGE') LOOP
+        EXECUTE IMMEDIATE 'DROP PACKAGE ' || pkg.object_name;
+    END LOOP;
+END;
+/
+
 --------------------------------------------------------------------------------
 -- 1. GEOGRAPHIC & AIRPORT MASTER DATA
 --------------------------------------------------------------------------------
@@ -355,12 +363,12 @@ SELECT
     -- 1. Get Total Capacity (Count seats in the aircraft model)
     (SELECT COUNT(*) FROM Aircraft_Seat_Map WHERE Model_ID = F.Model_ID) AS Total_Capacity,
     
-    -- 2. Get Booked Seats (Count rows in Reservation where seat is not null)
-    (SELECT COUNT(*) FROM Reservation WHERE Instance_ID = F.Instance_ID AND Row_Number IS NOT NULL) AS Seats_Booked,
+    -- 2. Get Booked Seats (Count rows in Reservation where seat is not null AND not cancelled)
+    (SELECT COUNT(*) FROM Reservation WHERE Instance_ID = F.Instance_ID AND Row_Number IS NOT NULL AND Ticket_Status != 'CANCELLED') AS Seats_Booked,
     
     -- 3. Calculate Remaining
     (SELECT COUNT(*) FROM Aircraft_Seat_Map WHERE Model_ID = F.Model_ID) - 
-    (SELECT COUNT(*) FROM Reservation WHERE Instance_ID = F.Instance_ID AND Row_Number IS NOT NULL) AS Seats_Remaining
+    (SELECT COUNT(*) FROM Reservation WHERE Instance_ID = F.Instance_ID AND Row_Number IS NOT NULL AND Ticket_Status != 'CANCELLED') AS Seats_Remaining
 
 FROM Flight_Instance F;
 
@@ -405,12 +413,13 @@ BEGIN
                 JOIN Aircraft_Seat_Map S ON F.Model_ID = S.Model_ID
                 WHERE F.Instance_ID = p_Instance_ID
                 
-                MINUS -- B. Subtract seats ALREADY BOOKED on this flight
+                MINUS -- B. Subtract seats ALREADY BOOKED on this flight (exclude cancelled)
                 
                 SELECT Row_Number, Seat_Letter
                 FROM Reservation
                 WHERE Instance_ID = p_Instance_ID
                   AND Row_Number IS NOT NULL
+                  AND Ticket_Status != 'CANCELLED'
             )
             -- C. Randomize and pick the first one
             ORDER BY DBMS_RANDOM.VALUE
@@ -823,18 +832,19 @@ CREATE OR REPLACE PROCEDURE USP_Cancel_Reservation (
     p_Refund_Amount OUT NUMBER,
     p_Success OUT NUMBER
 ) AS
-    v_Instance_ID VARCHAR2(8);
+    v_Instance_ID VARCHAR2(20);  -- Match Flight_Instance.Instance_ID size
     v_Price_Charged NUMBER(10,2);
     v_Ticket_Status VARCHAR2(20);
+    v_Passenger_Type VARCHAR2(20);
 BEGIN
     -- Initialize output parameters
     p_Success := 0;
     p_Refund_Amount := 0;
     
-    -- 1. Get reservation details
+    -- 1. Get reservation details including passenger type
     BEGIN
-        SELECT Instance_ID, Price_Charged, Ticket_Status
-        INTO v_Instance_ID, v_Price_Charged, v_Ticket_Status
+        SELECT Instance_ID, Price_Charged, Ticket_Status, Passenger_Type
+        INTO v_Instance_ID, v_Price_Charged, v_Ticket_Status, v_Passenger_Type
         FROM Reservation
         WHERE Reservation_ID = p_Reservation_ID;
     EXCEPTION
@@ -852,10 +862,16 @@ BEGIN
     
     -- 4. Update reservation - this triggers TRG_Auto_Cancel_Booking
     --    which handles booking status and logging automatically
+    --    
+    --    IMPORTANT: Do NOT set Row_Number and Seat_Letter to NULL on cancellation!
+    --    The UQ_Seat_Instance constraint is on (Instance_ID, Row_Number, Seat_Letter).
+    --    If multiple reservations on the same flight are cancelled, setting both to NULL
+    --    would create duplicate (Instance_ID, NULL, NULL) entries, violating the constraint.
+    --    
+    --    Instead, keep the seat data but mark status as CANCELLED.
+    --    Queries checking seat availability should filter WHERE Ticket_Status != 'CANCELLED'.
     UPDATE Reservation
-    SET Ticket_Status = 'CANCELLED',
-        Row_Number = NULL,
-        Seat_Letter = NULL
+    SET Ticket_Status = 'CANCELLED'
     WHERE Reservation_ID = p_Reservation_ID;
     
     -- 5. Success - caller controls commit/rollback
@@ -1033,32 +1049,37 @@ END;
 -- or update it to 'ACCEPTED' if it already exists.
 -- 
 -- This eliminates manual reciprocal handling in application code.
+--
+-- NOTE: Uses a package-level flag to prevent infinite recursion.
+-- When the trigger updates User_Family, it would normally fire again,
+-- causing ORA-00036: maximum number of recursive SQL levels exceeded.
+-- The PKG_FAMILY_TRIGGER.g_in_trigger flag prevents this.
 --------------------------------------------------------------------------------
+
+-- Package for trigger recursion control
+CREATE OR REPLACE PACKAGE PKG_FAMILY_TRIGGER AS
+    g_in_trigger BOOLEAN := FALSE;
+END PKG_FAMILY_TRIGGER;
+/
+
 CREATE OR REPLACE TRIGGER TRG_Auto_Reciprocal_Family
 AFTER UPDATE OF Status ON User_Family
-FOR EACH ROW
-WHEN (NEW.Status = 'ACCEPTED' AND OLD.Status = 'PENDING')
-DECLARE
-    v_Exists NUMBER;
 BEGIN
-    -- Check if reciprocal relationship already exists
-    SELECT COUNT(*) INTO v_Exists
-    FROM User_Family
-    WHERE User_ID = :NEW.Family_User_ID
-    AND Family_User_ID = :NEW.User_ID;
-    
-    IF v_Exists = 0 THEN
-        -- Insert new reciprocal relationship
-        INSERT INTO User_Family (User_ID, Family_User_ID, Relationship, Status, Created_At)
-        VALUES (:NEW.Family_User_ID, :NEW.User_ID, :NEW.Relationship, 'ACCEPTED', SYSTIMESTAMP);
-    ELSE
-        -- Update existing reciprocal relationship to ACCEPTED
-        UPDATE User_Family
-        SET Status = 'ACCEPTED', Relationship = :NEW.Relationship
-        WHERE User_ID = :NEW.Family_User_ID
-        AND Family_User_ID = :NEW.User_ID
-        AND Status != 'ACCEPTED';  -- Avoid redundant updates
+    IF NOT PKG_FAMILY_TRIGGER.g_in_trigger THEN
+        PKG_FAMILY_TRIGGER.g_in_trigger := TRUE;
+        FOR rec IN (SELECT User_ID, Family_User_ID, Relationship FROM User_Family WHERE Status = 'ACCEPTED')
+        LOOP
+            UPDATE User_Family SET Status = 'ACCEPTED' WHERE User_ID = rec.Family_User_ID AND Family_User_ID = rec.User_ID;
+            IF SQL%ROWCOUNT = 0 THEN
+                INSERT INTO User_Family (User_ID, Family_User_ID, Relationship, Status, Created_At)
+                VALUES (rec.Family_User_ID, rec.User_ID, rec.Relationship, 'ACCEPTED', SYSTIMESTAMP);
+            END IF;
+        END LOOP;
+        PKG_FAMILY_TRIGGER.g_in_trigger := FALSE;
     END IF;
+EXCEPTION WHEN OTHERS THEN
+    PKG_FAMILY_TRIGGER.g_in_trigger := FALSE;
+    RAISE;
 END;
 /
 
