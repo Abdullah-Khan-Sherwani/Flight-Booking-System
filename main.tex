@@ -1,0 +1,1301 @@
+\documentclass[12pt,a4paper,openany]{report}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{tocloft}
+\usepackage{float}
+
+% Header and Footer
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Flight Management System}
+\fancyhead[R]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% Code listing style
+\lstset{
+    language=SQL,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue},
+    commentstyle=\color{green!60!black},
+    stringstyle=\color{red},
+    showstringspaces=false,
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny\color{gray}
+}
+
+% Title formatting
+\titleformat{\chapter}[display]
+{\normalfont\huge\bfseries}{\chaptertitlename\ \thechapter}{20pt}{\Huge}
+\titlespacing*{\chapter}{0pt}{-20pt}{20pt}
+
+\begin{document}
+
+% Title Page
+\begin{titlepage}
+    \centering
+    \vspace*{2cm}
+    
+    {\LARGE\bfseries Database Systems\par}
+    \vspace{1cm}
+    {\Large Miss Abeera Tariq\par}
+    \vspace{2cm}
+    
+    {\Huge\bfseries Flight Management System\par}
+    \vspace{0.5cm}
+    {\Large Database Design and Implementation Project\par}
+    \vspace{3cm}
+    
+    {\Large\bfseries Team Members:\par}
+    \vspace{0.5cm}
+    {\large
+    Abdullah Khan Sherwani (27880)\par
+    \vspace{0.3cm}
+    Immaduddin Durrani (29204)\par
+    \vspace{0.3cm}
+    Hamza Kashif (29022)\par
+    }
+    
+    \vfill
+    
+    {\large Department of Computer Science\par}
+    {\large \today\par}
+\end{titlepage}
+
+% Table of Contents
+\tableofcontents
+\newpage
+
+% Chapter 1: Business Scenario
+\chapter{Business Scenario}
+
+\section{Description of the Chosen Business Scenario}
+The Flight Management System is a comprehensive web-based application designed to streamline and automate the core operations of an airline business. The system manages critical aspects including flight scheduling, route management, aircraft fleet operations, passenger bookings, and pricing strategies across different travel classes.
+
+The system addresses the needs of multiple stakeholders including passengers who need to search and book flights, airline staff who manage operations, and administrators who oversee the entire system. The platform provides real-time availability checking, dynamic pricing based on routes and classes, and comprehensive booking management capabilities.
+
+Key functionalities include:
+\begin{itemize}
+    \item Flight search and booking with real-time seat availability
+    \item Multi-class pricing management (Economy, Business, First Class)
+    \item Route and schedule management
+    \item Aircraft fleet tracking and assignment
+    \item Passenger information management
+    \item Booking history and ticket generation
+\end{itemize}
+
+\section{Summary of Interview(s) and Application Analysis}
+
+\textit{[This section is reserved for interview findings and analysis. Content to be added after conducting stakeholder interviews with airline personnel, booking agents, and potential users.]}
+
+\subsection{Stakeholder Interviews}
+\textit{[Interview details with airline management]}
+
+\subsection{User Requirements Analysis}
+\textit{[Analysis of user needs and expectations]}
+
+\subsection{Competitive Analysis}
+\textit{[Comparison with existing flight booking systems]}
+
+\newpage
+
+% Chapter 2: Business Rules
+\chapter{Business Rules}
+
+\section{Core Business Rules}
+
+This section documents the 25 essential business rules governing the Flight Management System operations, organized by functional categories. These rules define the constraints, policies, and operational logic that ensure data integrity and support the business requirements.
+
+\subsection{Category 1: User \& Account Management}
+
+\subsubsection{BR-1: Account Holder vs. Traveler Separation}
+An \texttt{App\_User} (account holder) is distinct from a \texttt{Passenger} (traveler). One user can book flights for multiple passengers without each needing an account. This design enables group bookings where one person pays for family/friends, simplifying the booking process and reducing the barrier to entry for occasional travelers.
+
+\textbf{Implementation:} Separate \texttt{App\_User} and \texttt{Passenger} tables with linking mechanism.
+
+\subsubsection{BR-2: User Profile Linking}
+Each registered user can link exactly one passenger profile to their account via \texttt{Passenger.Linked\_User\_ID}. Unregistered travelers have \texttt{NULL} linked user IDs. This allows the "Add Myself" feature to autofill booking forms with the registered user's information, improving user experience and data accuracy.
+
+\textbf{Implementation:} Optional foreign key \texttt{Linked\_User\_ID} in \texttt{Passenger} table referencing \texttt{App\_User}.
+
+\subsubsection{BR-3: Email-Based Authentication}
+Users log in using unique email addresses. Passwords are stored as SHA-256 hash (never plaintext) for security. Email format must match the pattern \texttt{.*@.*} to ensure valid email addresses.
+
+\textbf{Implementation:} 
+\begin{itemize}
+    \item \texttt{UNIQUE} constraint on email field
+    \item Password hashing in application layer
+    \item \texttt{CHECK} constraint or application-level validation for email format
+\end{itemize}
+
+\subsection{Category 2: Booking Structure \& PNR}
+
+\subsubsection{BR-4: Single PNR for Group Bookings}
+Multiple passengers traveling together share one \texttt{Booking\_ID} (Passenger Name Record or PNR). PNR format is a 6-character alphanumeric code (e.g., "A7F3E9"). This simplifies itinerary management compared to creating individual bookings per traveler.
+
+\textbf{Implementation:} One-to-many relationship between \texttt{Booking} and \texttt{Reservation} tables.
+
+\subsubsection{BR-5: Lead User Financial Ownership}
+Every booking has a \texttt{Lead\_User\_ID} (the account holder who made the booking). The lead user is financially responsible even if not traveling themselves. Booking contact details are stored separately from the user profile and may differ.
+
+\textbf{Implementation:} 
+\begin{itemize}
+    \item \texttt{Lead\_User\_ID} foreign key in \texttt{Booking} table
+    \item Separate contact fields in \texttt{Booking} table
+\end{itemize}
+
+\subsubsection{BR-6: Booking Status Lifecycle}
+Bookings progress through a defined lifecycle:
+\begin{itemize}
+    \item \textbf{PENDING:} Awaiting payment (24-hour timeout for Pay Later option)
+    \item \textbf{CONFIRMED:} Payment received, tickets issued
+    \item \textbf{CANCELLED:} All reservations cancelled, refunds processed
+    \item \textbf{COMPLETED:} Travel completed (historical record)
+\end{itemize}
+
+\textbf{Implementation:} \texttt{Status} enumeration field with \texttt{CHECK} constraint in \texttt{Booking} table.
+
+\subsection{Category 3: Passenger \& Demographics}
+
+\subsubsection{BR-7: Passenger Profile Reusability}
+Passenger records are permanent profiles, NOT per-flight snapshots. The same passenger profile is reused across multiple bookings over time. The system remembers past travelers for quick re-booking, improving efficiency for frequent travelers.
+
+\textbf{Implementation:} \texttt{Passenger} table as independent entity, referenced by multiple reservations.
+
+\subsubsection{BR-8: Passenger Type Classification}
+Three passenger types with different pricing and seating rules:
+\begin{itemize}
+    \item \textbf{ADULT:} Full-fare traveler requiring seat
+    \item \textbf{LAP\_INFANT:} Child under 2 on parent's lap, no seat required, FREE
+    \item \textbf{SEATED\_INFANT:} Child under 2 with own seat, 50\% of adult fare
+\end{itemize}
+
+\textbf{Implementation:} \texttt{Passenger\_Type} enumeration field with pricing rules enforced by trigger.
+
+\subsubsection{BR-9: No Duplicate Travelers per Flight}
+The same passenger cannot be booked twice on the same flight instance. This prevents accidental double-bookings and maintains data integrity.
+
+\textbf{Implementation:} \texttt{UNIQUE(Passenger\_ID, Instance\_ID)} constraint in \texttt{Reservation} table.
+
+\subsection{Category 4: Aircraft \& Seat Configuration}
+
+\subsubsection{BR-10: Fixed Aircraft Seat Maps}
+Each aircraft model has a predefined seat configuration stored in \texttt{Aircraft\_Seat\_Map}. Seat identifiers consist of \texttt{Row\_Number} + \texttt{Seat\_Letter} (e.g., 12A, 12B). The configuration is immutable per aircraft model, ensuring consistency across all flights using that aircraft type.
+
+\textbf{Implementation:} \texttt{Aircraft\_Seat\_Map} table with composite key \texttt{(Aircraft\_Model\_ID, Row\_Number, Seat\_Letter)}.
+
+\subsubsection{BR-11: Row-Level Class Assignment}
+Entire rows are assigned to one cabin class (Economy, Business, First Class). Classes cannot be mixed within a single row. The class determines pricing tier and service level.
+
+\textbf{Implementation:} \texttt{Class\_ID} stored at row level in \texttt{Aircraft\_Seat\_Map}.
+
+\subsubsection{BR-12: Lap Infant Seat Handling}
+Lap infants have \texttt{NULL} values for \texttt{Row\_Number} and \texttt{Seat\_Letter}. Since \texttt{NULL != NULL} in SQL, this allows multiple lap infants without violating uniqueness constraints. The \texttt{UNIQUE} constraint only enforces seated passenger seat uniqueness.
+
+\textbf{Implementation:} Nullable seat fields with \texttt{UNIQUE} constraint that ignores \texttt{NULL} values.
+
+\subsection{Category 5: Flight Operations}
+
+\subsubsection{BR-13: Flight Instance Definition}
+A Flight Instance represents a specific departure of a route on a specific date/time. The same route (e.g., KHI→LHE) can have multiple instances per day. Each instance is tied to a specific aircraft model.
+
+\textbf{Implementation:} \texttt{Flight\_Instance} table with \texttt{Route\_ID}, \texttt{Departure\_DateTime}, and \texttt{Aircraft\_Model\_ID}.
+
+\subsubsection{BR-14: Flight Status Management}
+Flight instances progress through operational statuses:
+\begin{itemize}
+    \item \textbf{SCHEDULED:} Normal operations
+    \item \textbf{DELAYED:} Departure postponed
+    \item \textbf{CANCELLED:} Flight not operating
+    \item \textbf{LANDED:} Completed
+\end{itemize}
+
+\textbf{Implementation:} \texttt{Status} enumeration field with \texttt{CHECK} constraint in \texttt{Flight\_Instance} table.
+
+\subsubsection{BR-15: Source-Destination Validation}
+Flight routes must have different source and destination airports. A route cannot have the same airport as both origin and destination.
+
+\textbf{Implementation:} \texttt{CHECK(Source\_Airport\_Code != Dest\_Airport\_Code)} constraint in \texttt{Route} table.
+
+\subsection{Category 6: Pricing \& Revenue}
+
+\subsubsection{BR-16: Three-Tier Class Pricing}
+Three cabin classes with differentiated pricing:
+\begin{itemize}
+    \item \textbf{Economy (ECO):} Base price
+    \item \textbf{Business (BUS):} Approximately 1.5× Economy
+    \item \textbf{First Class (FIR):} Approximately 2.5× Economy
+\end{itemize}
+
+Prices are stored with temporal validity using \texttt{Valid\_From} and \texttt{Valid\_To} dates to support historical pricing and future pricing strategies.
+
+\textbf{Implementation:} \texttt{Route\_Pricing} table with \texttt{Class\_ID} and temporal fields.
+
+\subsubsection{BR-17: Dynamic Per-Flight Pricing}
+Each \texttt{Flight\_Instance} has a \texttt{Price\_Multiplier} (default 1.00). The final price calculation is:
+
+\textbf{Final Price = Base\_Price × Price\_Multiplier}
+
+This enables surge pricing, seasonal adjustments, and demand-based pricing without modifying base price records.
+
+\textbf{Implementation:} \texttt{Price\_Multiplier DECIMAL(5,2) DEFAULT 1.00} in \texttt{Flight\_Instance} table.
+
+\subsubsection{BR-18: Historical Price Tracking}
+The \texttt{Route\_Pricing} table stores price history with validity periods. Multiple price records exist per route/class combination with non-overlapping date ranges. This supports price audits, historical reporting, and regulatory compliance.
+
+\textbf{Implementation:} 
+\begin{itemize}
+    \item Temporal fields \texttt{Valid\_From} and \texttt{Valid\_To}
+    \item Application logic or triggers to prevent overlapping validity periods
+\end{itemize}
+
+\subsubsection{BR-19: Infant Pricing Enforcement}
+A database trigger validates infant pricing at reservation \texttt{INSERT}:
+\begin{itemize}
+    \item \textbf{LAP\_INFANT:} Must be FREE (\texttt{Price\_Charged = 0})
+    \item \textbf{SEATED\_INFANT:} Must be 50\% of adult fare
+\end{itemize}
+
+\textbf{Implementation:} Trigger \texttt{CHK\_Infant\_Pricing\_Rule} on \texttt{Reservation} table.
+
+\subsubsection{BR-20: Individual Passenger Pricing}
+Each reservation has a separate \texttt{Price\_Charged} column. This supports mixed pricing in a single booking (adults + children + infants). The total booking amount equals the sum of all reservation prices plus taxes and fees.
+
+\textbf{Implementation:} \texttt{Price\_Charged} field in \texttt{Reservation} table with computed booking total.
+
+\subsection{Category 7: Seat Reservation \& Inventory}
+
+\subsubsection{BR-21: Real-Time Seat Availability}
+Available seats are calculated on-the-fly using the formula:
+
+\textbf{Available Seats = Total Seats - Booked Seats}
+
+This value is never stored or denormalized to prevent synchronization issues. The query joins \texttt{Aircraft\_Seat\_Map} with the \texttt{Reservation} table to compute real-time availability.
+
+\textbf{Implementation:} Computed value via SQL query, not stored in database.
+
+\subsubsection{BR-22: No Double-Booking Protection}
+A database constraint prevents two passengers from occupying the same seat. This prevents race conditions in concurrent booking scenarios.
+
+\textbf{Implementation:} \texttt{UNIQUE(Instance\_ID, Row\_Number, Seat\_Letter)} constraint in \texttt{Reservation} table.
+
+\subsubsection{BR-23: Class-Consistent Bookings}
+All passengers in the same booking must use the same cabin class per flight leg. The frontend enforces class selection before seat assignment. This prevents pricing complexity and operational confusion.
+
+\textbf{Implementation:} Application-level validation with optional database trigger for enforcement.
+
+\subsection{Category 8: Cancellation \& Refunds}
+
+\subsubsection{BR-24: Time-Based Refund Policy}
+Refund eligibility is determined by the time between cancellation and scheduled departure:
+\begin{itemize}
+    \item \textbf{More than 24 hours before departure:} 90\% refund
+    \item \textbf{24 hours to 2 hours before departure:} 50\% refund
+    \item \textbf{Less than 2 hours before departure:} No refund (0\%)
+\end{itemize}
+
+\textbf{Implementation:} Stored procedure or application logic calculating refund based on \texttt{TIMESTAMPDIFF} between cancellation time and departure time.
+
+\subsubsection{BR-25: Cancellation Atomicity}
+When a booking is cancelled, ALL associated reservations must be cancelled atomically. Partial cancellations of group bookings are not permitted. This maintains booking integrity and simplifies refund processing.
+
+\textbf{Implementation:} Database transaction with cascade operations or trigger ensuring all-or-nothing cancellation.
+
+\section{Business Rule Enforcement Strategy}
+
+\subsection{Database-Level Enforcement}
+The following mechanisms enforce business rules at the database level:
+\begin{itemize}
+    \item \textbf{Primary Key Constraints:} Ensure entity uniqueness
+    \item \textbf{Foreign Key Constraints:} Maintain referential integrity
+    \item \textbf{Unique Constraints:} Prevent duplicate entries (e.g., BR-9, BR-22)
+    \item \textbf{Check Constraints:} Validate data domains (e.g., BR-6, BR-14, BR-15)
+    \item \textbf{Triggers:} Enforce complex rules (e.g., BR-19, BR-25)
+    \item \textbf{Stored Procedures:} Implement business logic (e.g., BR-24)
+\end{itemize}
+
+\subsection{Application-Level Enforcement}
+Some business rules are better enforced in the application layer for flexibility:
+\begin{itemize}
+    \item \textbf{Authentication \& Authorization:} BR-3
+    \item \textbf{User Interface Constraints:} BR-23
+    \item \textbf{Complex Calculations:} BR-17, BR-20
+    \item \textbf{Workflow Management:} BR-6
+\end{itemize}
+
+\subsection{Hybrid Enforcement}
+Critical rules employ defense-in-depth with both database and application validation:
+\begin{itemize}
+    \item Pricing rules (BR-16, BR-17, BR-19, BR-20)
+    \item Seat availability (BR-21, BR-22)
+    \item Booking lifecycle (BR-4, BR-5, BR-6)
+\end{itemize}
+
+\section{Use Cases}
+
+\subsection{Passenger Use Cases}
+
+\subsubsection{UC-1: User Registration and Login}
+\textbf{Actor:} Passenger
+
+\textbf{Preconditions:} None
+
+\textbf{Flow:}
+\begin{enumerate}
+    \item User provides email and password
+    \item System validates email format (BR-3)
+    \item System hashes password using SHA-256
+    \item System creates \texttt{App\_User} record
+    \item System optionally creates linked \texttt{Passenger} profile (BR-2)
+\end{enumerate}
+
+\textbf{Postconditions:} User account created, ready to make bookings
+
+\textbf{Business Rules Applied:} BR-1, BR-2, BR-3
+
+\subsubsection{UC-2: Search Available Flights}
+\textbf{Actor:} User (authenticated or guest)
+
+\textbf{Preconditions:} Valid source and destination airports exist
+
+\textbf{Flow:}
+\begin{enumerate}
+    \item User enters origin, destination, date, class, and passenger count
+    \item System validates source ≠ destination (BR-15)
+    \item System queries \texttt{Flight\_Instance} with status = SCHEDULED (BR-14)
+    \item System calculates available seats per flight (BR-21)
+    \item System retrieves pricing based on class and date (BR-16, BR-17, BR-18)
+    \item System displays matching flights with prices
+\end{enumerate}
+
+\textbf{Postconditions:} Available flights displayed to user
+
+\textbf{Business Rules Applied:} BR-13, BR-14, BR-15, BR-16, BR-17, BR-18, BR-21
+
+\subsubsection{UC-3: Create Group Booking}
+\textbf{Actor:} Registered User
+
+\textbf{Preconditions:} User authenticated, flight selected
+
+\textbf{Flow:}
+\begin{enumerate}
+    \item System creates \texttt{Booking} with status = PENDING (BR-6)
+    \item User designated as \texttt{Lead\_User\_ID} (BR-5)
+    \item System generates 6-character PNR (BR-4)
+    \item User adds passengers (can use "Add Myself" if linked profile exists - BR-2)
+    \item System validates no duplicate passengers per flight (BR-9)
+    \item User selects seats for each passenger (same class enforced - BR-23)
+    \item System validates seat availability and no double-booking (BR-22)
+    \item System calculates individual prices based on passenger type (BR-8, BR-19, BR-20)
+    \item User proceeds to payment
+\end{enumerate}
+
+\textbf{Postconditions:} Booking created with PENDING status
+
+\textbf{Business Rules Applied:} BR-1, BR-2, BR-4, BR-5, BR-6, BR-7, BR-8, BR-9, BR-19, BR-20, BR-22, BR-23
+
+\subsubsection{UC-4: Complete Payment}
+\textbf{Actor:} Lead User
+
+\textbf{Preconditions:} Booking exists with PENDING status
+
+\textbf{Flow:}
+\begin{enumerate}
+    \item User provides payment information
+    \item System processes payment transaction
+    \item Upon success, booking status changed to CONFIRMED (BR-6)
+    \item System generates tickets for all passengers
+    \item System sends confirmation email to lead user
+\end{enumerate}
+
+\textbf{Postconditions:} Booking confirmed, tickets issued
+
+\textbf{Business Rules Applied:} BR-5, BR-6
+
+\subsubsection{UC-5: Cancel Booking}
+\textbf{Actor:} Lead User
+
+\textbf{Preconditions:} Booking exists with CONFIRMED status
+
+\textbf{Flow:}
+\begin{enumerate}
+    \item User requests cancellation
+    \item System calculates time until departure
+    \item System determines refund percentage based on cancellation policy (BR-24)
+    \item System displays refund amount to user
+    \item Upon confirmation, system cancels ALL reservations atomically (BR-25)
+    \item Booking status changed to CANCELLED (BR-6)
+    \item System processes refund
+    \item Seats become available for rebooking
+\end{enumerate}
+
+\textbf{Postconditions:} Booking cancelled, refund processed, seats released
+
+\textbf{Business Rules Applied:} BR-6, BR-21, BR-24, BR-25
+
+\subsection{Administrative Use Cases}
+
+\subsubsection{UC-6: Create Flight Instance}
+\textbf{Actor:} Flight Operations Manager
+
+\textbf{Preconditions:} Route and aircraft model exist
+
+\textbf{Flow:}
+\begin{enumerate}
+    \item Admin selects route
+    \item System validates source ≠ destination (BR-15)
+    \item Admin specifies departure date/time and aircraft model
+    \item System creates \texttt{Flight\_Instance} with status = SCHEDULED (BR-13, BR-14)
+    \item System sets default \texttt{Price\_Multiplier} = 1.00 (BR-17)
+    \item System loads seat map from \texttt{Aircraft\_Seat\_Map} (BR-10, BR-11)
+\end{enumerate}
+
+\textbf{Postconditions:} Flight instance available for booking
+
+\textbf{Business Rules Applied:} BR-10, BR-11, BR-13, BR-14, BR-15, BR-17
+
+\subsubsection{UC-7: Update Dynamic Pricing}
+\textbf{Actor:} Revenue Manager
+
+\textbf{Preconditions:} Flight instance exists
+
+\textbf{Flow:}
+\begin{enumerate}
+    \item Admin selects flight instance
+    \item System displays current \texttt{Price\_Multiplier} and booking statistics
+    \item Admin adjusts multiplier based on demand (BR-17)
+    \item System validates multiplier ≥ 0.5 and ≤ 3.0
+    \item System updates \texttt{Flight\_Instance.Price\_Multiplier}
+    \item New prices apply to future bookings only (existing bookings unchanged)
+\end{enumerate}
+
+\textbf{Postconditions:} Dynamic pricing updated for flight
+
+\textbf{Business Rules Applied:} BR-17, BR-18
+
+\subsubsection{UC-8: Manage Route Pricing}
+\textbf{Actor:} Pricing Analyst
+
+\textbf{Preconditions:} Route and cabin classes exist
+
+\textbf{Flow:}
+\begin{enumerate}
+    \item Admin selects route and class
+    \item System displays current and historical pricing (BR-18)
+    \item Admin enters new base price and validity period
+    \item System enforces three-tier pricing structure (BR-16)
+    \item System validates non-overlapping date ranges
+    \item System inserts new \texttt{Route\_Pricing} record with temporal validity
+\end{enumerate}
+
+\textbf{Postconditions:} New pricing schedule established
+
+\textbf{Business Rules Applied:} BR-16, BR-18
+
+\newpage
+
+% Chapter 3: Entities, Attributes, and Relationships
+\chapter{Entities, Attributes, and Relationships}
+
+\section{Entity Descriptions}
+
+\textit{[This section will provide detailed descriptions of all entities in the Flight Management System, including their attributes, data types, and constraints.]}
+
+\subsection{Primary Entities}
+\textit{[Description of core entities such as Flights, Routes, Aircraft, Passengers, Bookings, etc.]}
+
+\subsection{Supporting Entities}
+\textit{[Description of supporting entities such as Airports, Airlines, Classes, Pricing, etc.]}
+
+\section{Relationships and Multiplicity Constraints}
+
+\textit{[Detailed explanation of relationships between entities with cardinality specifications]}
+
+\subsection{One-to-Many Relationships}
+\textit{[Documentation of 1:N relationships]}
+
+\subsection{Many-to-Many Relationships}
+\textit{[Documentation of M:N relationships and their resolution]}
+
+\section{Entity-Relationship Diagram}
+
+\textit{[This section is reserved for the ER diagram representation of the database design]}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{ERD_Diagram.png}
+    \caption{Entity-Relationship Diagram for Flight Management System}
+    \label{fig:erd-diagram}
+\end{figure}
+
+\newpage
+
+% Chapter 4: Relational Schema
+\chapter{Relational Schema}
+
+\section{Database Schema Overview}
+
+The Flight Management System database is designed following sound normalization principles and implements a pragmatic approach to ensure both data integrity and application performance. The schema consists of multiple interrelated tables that capture all aspects of flight operations, bookings, and pricing.
+    
+\subsection{Visual Schema Representation}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{DBDesigner.png}
+    \caption{Relational Schema - DBDesigner Visual Representation}
+    \label{fig:DB Designer}
+\end{figure}
+
+\section{Normalization Analysis}
+
+\subsection{First Normal Form (1NF)}
+\textbf{Definition:} All attributes contain only atomic values, and each column contains values of a single type.
+
+\textbf{Implementation in our schema:}
+\begin{itemize}
+    \item All tables have been designed with atomic attributes
+    \item No repeating groups or multi-valued attributes exist
+    \item Each column stores a single value of a specific data type
+\end{itemize}
+
+\textit{[Detailed examples showing 1NF compliance for key tables]}
+
+\subsection{Second Normal Form (2NF)}
+\textbf{Definition:} The relation is in 1NF and all non-key attributes are fully functionally dependent on the primary key.
+
+\textbf{Implementation in our schema:}
+\begin{itemize}
+    \item All tables are in 1NF
+    \item No partial dependencies exist
+    \item All non-prime attributes depend on the entire primary key
+\end{itemize}
+
+\textit{[Detailed examples showing 2NF compliance and elimination of partial dependencies]}
+
+\subsection{Third Normal Form (3NF)}
+\textbf{Definition:} The relation is in 2NF and no transitive dependencies exist.
+
+\textbf{Implementation in our schema:}
+\begin{itemize}
+    \item All tables are in 2NF
+    \item No transitive dependencies exist
+    \item All non-prime attributes depend directly on the primary key
+\end{itemize}
+
+\textit{[Detailed examples showing 3NF compliance and elimination of transitive dependencies]}
+
+\subsection{Candidate Keys and the Pragmatic Approach}
+
+\textbf{The Pricing Table Design Philosophy:}
+
+Our schema employs \textbf{Option B: The "Pragmatic" Fix (Surrogate Key + Unique Constraint)} approach for critical tables, particularly the Pricing table. This design decision balances theoretical normalization requirements with practical application development needs.
+
+\textbf{Key Design Features:}
+\begin{itemize}
+    \item \textbf{Surrogate Primary Key:} \texttt{Pricing\_ID} serves as the primary key for easy foreign key management and referencing
+    \item \textbf{Candidate Key Definition:} The combination \texttt{(Route\_ID, Class\_ID, Valid\_From)} is defined as a Candidate Key through a UNIQUE constraint
+    \item \textbf{Normalization Compliance:} Since attributes can depend on any Candidate Key (not just the primary key), this design satisfies BCNF/3NF requirements
+    \item \textbf{Business Logic Enforcement:} The UNIQUE constraint prevents duplicate pricing entries for the same route, class, and time period
+\end{itemize}
+
+\textbf{Advantages of this approach:}
+\begin{enumerate}
+    \item Simplified foreign key relationships in dependent tables
+    \item Efficient indexing and query performance
+    \item Prevention of duplicate pricing records through enforced uniqueness
+    \item Compliance with normalization theory through Candidate Key recognition
+    \item Industry-standard practice in modern application development
+\end{enumerate}
+
+\textbf{Normalization Validation:}
+\begin{itemize}
+    \item \textbf{3NF Compliance:} All non-key attributes (Base\_Price) depend on the Candidate Key \texttt{(Route\_ID, Class\_ID, Valid\_From)}
+    \item \textbf{BCNF Compliance:} Every determinant is a Candidate Key
+    \item \textbf{No Anomalies:} Update, insertion, and deletion anomalies are prevented
+\end{itemize}
+
+\section{Data Definition Language (DDL) Scripts}
+
+\subsection{Table Creation Scripts}
+
+\textit{[This section contains the DDL scripts for creating all tables in the database]}
+
+\subsubsection{Core Tables}
+
+\begin{lstlisting}[caption={Sample DDL Script - Tables Creation}]
+-- Example: Passengers Table
+CREATE TABLE Passengers (
+    Passenger_ID INT PRIMARY KEY AUTO_INCREMENT,
+    First_Name VARCHAR(50) NOT NULL,
+    Last_Name VARCHAR(50) NOT NULL,
+    Email VARCHAR(100) UNIQUE NOT NULL,
+    Phone VARCHAR(20),
+    Date_Of_Birth DATE,
+    Passport_Number VARCHAR(50) UNIQUE,
+    Created_At TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Additional tables...
+\end{lstlisting}
+
+\textit{[Complete DDL scripts for all tables will be provided]}
+
+\subsection{Constraints Applied}
+
+\textbf{Primary Key Constraints:}
+\begin{itemize}
+    \item \textit{[Description of primary keys in each table]}
+    \item \textit{[Explanation of surrogate vs. natural key decisions]}
+\end{itemize}
+
+\textbf{Foreign Key Constraints:}
+\begin{itemize}
+    \item \textit{[List of all foreign key relationships]}
+    \item \textit{[Explanation of referential integrity rules (CASCADE, RESTRICT, etc.)]}
+\end{itemize}
+
+\textbf{Unique Constraints:}
+\begin{itemize}
+    \item \textit{Pricing Table: UNIQUE(Route\_ID, Class\_ID, Valid\_From) - Implements Candidate Key}
+    \item \textit{[Additional unique constraints in other tables]}
+\end{itemize}
+
+\textbf{Check Constraints:}
+\begin{itemize}
+    \item \textit{[Domain constraints and validation rules]}
+    \item \textit{[Business rule enforcement through CHECK constraints]}
+\end{itemize}
+
+\textbf{NOT NULL Constraints:}
+\begin{itemize}
+    \item \textit{[Required fields in each table]}
+    \item \textit{[Justification for mandatory attributes]}
+\end{itemize}
+
+\subsection{Indexes}
+
+\begin{lstlisting}[caption={Sample Index Creation}]
+-- Example: Indexes for performance optimization
+CREATE INDEX idx_booking_passenger 
+    ON Bookings(Passenger_ID);
+
+CREATE INDEX idx_flight_route 
+    ON Flights(Route_ID);
+
+-- Additional indexes...
+\end{lstlisting}
+
+\textit{[Complete list of indexes with performance justification]}
+
+\section{Database Objects}
+
+\subsection{Triggers}
+
+\textit{[Documentation of all triggers implemented in the database]}
+
+\begin{lstlisting}[caption={Sample Trigger - Seat Availability}]
+-- Example: Trigger to update available seats
+DELIMITER //
+CREATE TRIGGER update_seat_availability
+AFTER INSERT ON Bookings
+FOR EACH ROW
+BEGIN
+    UPDATE Flights
+    SET Available_Seats = Available_Seats - 1
+    WHERE Flight_ID = NEW.Flight_ID;
+END//
+DELIMITER ;
+\end{lstlisting}
+
+\textbf{Trigger Descriptions:}
+\begin{itemize}
+    \item \textit{[Purpose and functionality of each trigger]}
+    \item \textit{[Business rules enforced by triggers]}
+\end{itemize}
+
+\subsection{Stored Procedures}
+
+\textit{[Documentation of all stored procedures]}
+
+\begin{lstlisting}[caption={Sample Stored Procedure - Flight Search}]
+-- Example: Procedure to search available flights
+DELIMITER //
+CREATE PROCEDURE SearchFlights(
+    IN p_origin VARCHAR(10),
+    IN p_destination VARCHAR(10),
+    IN p_departure_date DATE
+)
+BEGIN
+    -- Procedure logic here
+END//
+DELIMITER ;
+\end{lstlisting}
+
+\textbf{Stored Procedure Descriptions:}
+\begin{itemize}
+    \item \textit{[Purpose and parameters of each procedure]}
+    \item \textit{[Business logic implementation]}
+\end{itemize}
+
+\subsection{Views}
+
+\textit{[Documentation of all views created]}
+
+\begin{lstlisting}[caption={Sample View - Flight Schedule}]
+-- Example: View for displaying flight schedule
+CREATE VIEW vw_FlightSchedule AS
+SELECT 
+    f.Flight_ID,
+    f.Flight_Number,
+    r.Origin,
+    r.Destination,
+    f.Departure_Time,
+    f.Arrival_Time,
+    f.Available_Seats
+FROM Flights f
+JOIN Routes r ON f.Route_ID = r.Route_ID
+WHERE f.Status = 'Scheduled';
+\end{lstlisting}
+
+\textbf{View Descriptions:}
+\begin{itemize}
+    \item \textit{[Purpose and use case for each view]}
+    \item \textit{[Security and abstraction benefits]}
+\end{itemize}
+
+\section{Sample Data Insertion}
+
+\subsection{Test Data Scripts}
+
+\textit{[Scripts for inserting sample data to test the application]}
+
+\begin{lstlisting}[caption={Sample Data Insertion}]
+-- Example: Inserting test data
+INSERT INTO Passengers (First_Name, Last_Name, Email, Phone) 
+VALUES 
+    ('John', 'Doe', 'john.doe@example.com', '+92-300-1234567'),
+    ('Jane', 'Smith', 'jane.smith@example.com', '+92-321-9876543');
+
+-- Additional test data...
+\end{lstlisting}
+
+\subsection{Data Validation Tests}
+
+\textbf{Constraint Testing:}
+\begin{itemize}
+    \item \textit{[Tests for primary key uniqueness]}
+    \item \textit{[Tests for foreign key integrity]}
+    \item \textit{[Tests for unique constraints (including Candidate Key in Pricing)]}
+    \item \textit{[Tests for check constraints]}
+\end{itemize}
+
+\textbf{Sample Test Scenarios:}
+\begin{lstlisting}[caption={Constraint Validation Tests}]
+-- Test 1: Unique constraint on Pricing Candidate Key
+INSERT INTO Pricing (Route_ID, Class_ID, Valid_From, Base_Price)
+VALUES (1, 1, '2024-01-01', 15000.00);
+
+-- This should fail (duplicate Candidate Key)
+INSERT INTO Pricing (Route_ID, Class_ID, Valid_From, Base_Price)
+VALUES (1, 1, '2024-01-01', 16000.00);
+
+-- Additional validation tests...
+\end{lstlisting}
+
+\newpage
+
+% Chapter 5: Application Flow
+\chapter{Application Flow}
+
+\section{User Interaction Flow}
+
+\textit{[This section will document the complete user journey through the application, from initial access to booking completion]}
+
+\subsection{Flow Diagrams}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.9\textwidth]{Front1.png}
+    \caption{User Interaction Flow Diagram}
+    \label{fig:user-flow-1}
+\end{figure}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.9\textwidth]{Front2.png}
+    \caption{User Interaction Flow Diagram}
+    \label{fig:user-flow-2}
+\end{figure}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.9\textwidth]{Front3.png}
+    \caption{User Interaction Flow Diagram}
+    \label{fig:user-flow-3}
+\end{figure}
+
+\newpage
+
+% Chapter 6: Page-by-Page Navigation and SQL Queries
+\chapter{Page-by-Page Navigation and SQL Queries}
+
+\section{Overview}
+
+This chapter provides comprehensive documentation of each screen in the Flight Management System application, detailing the user interface components, backend functionality, and corresponding SQL queries that power each page.
+
+\section{Passenger Portal}
+
+\subsection{Home Page}
+
+\textbf{Route:} \texttt{/}
+
+\textbf{Template:} \texttt{index.html}
+
+\textbf{Description:}
+\textit{[Description of home page functionality and features]}
+
+\textbf{UI Components:}
+\begin{itemize}
+    \item \textit{[Navigation bar]}
+    \item \textit{[Search form]}
+    \item \textit{[Featured destinations]}
+\end{itemize}
+
+\textbf{SQL Queries:}
+
+\begin{lstlisting}[caption={Home Page - Featured Routes Query}]
+-- Query purpose: [Explanation]
+SELECT 
+    r.Route_ID,
+    r.Origin,
+    r.Destination,
+    MIN(p.Base_Price) as Starting_Price
+FROM Routes r
+JOIN Pricing p ON r.Route_ID = p.Route_ID
+GROUP BY r.Route_ID
+LIMIT 6;
+\end{lstlisting}
+
+\textbf{Query Explanation:}
+\textit{[Detailed explanation of query purpose and contribution to functionality]}
+
+\subsection{Flight Search Page}
+
+\textbf{Route:} \texttt{/search}
+
+\textbf{Template:} \texttt{search.html}
+
+\textbf{Description:}
+\textit{[Description of search functionality]}
+
+\textbf{Search Parameters:}
+\begin{itemize}
+    \item \textit{Origin airport}
+    \item \textit{Destination airport}
+    \item \textit{Departure date}
+    \item \textit{Travel class}
+    \item \textit{Number of passengers}
+\end{itemize}
+
+\textbf{SQL Queries:}
+
+\begin{lstlisting}[caption={Flight Search - Available Flights Query}]
+-- Query purpose: [Explanation]
+SELECT 
+    f.Flight_ID,
+    f.Flight_Number,
+    r.Origin,
+    r.Destination,
+    f.Departure_Time,
+    f.Arrival_Time,
+    a.Aircraft_Model,
+    f.Available_Seats,
+    p.Base_Price
+FROM Flights f
+JOIN Routes r ON f.Route_ID = r.Route_ID
+JOIN Aircraft a ON f.Aircraft_ID = a.Aircraft_ID
+JOIN Pricing p ON f.Route_ID = p.Route_ID
+WHERE r.Origin = ? 
+    AND r.Destination = ?
+    AND DATE(f.Departure_Time) = ?
+    AND f.Available_Seats >= ?
+    AND p.Class_ID = ?
+ORDER BY f.Departure_Time;
+\end{lstlisting}
+
+\textbf{Query Explanation:}
+\textit{[Detailed explanation of how this query finds available flights matching user criteria]}
+
+\subsection{Flight Details Page}
+
+\textbf{Route:} \texttt{/flight/<flight\_id>}
+
+\textbf{Template:} \texttt{flight\_details.html}
+
+\textbf{Description:}
+\textit{[Description of flight details display]}
+
+\textbf{SQL Queries:}
+
+\begin{lstlisting}[caption={Flight Details Query}]
+-- Query purpose: [Explanation]
+-- [SQL query to be inserted]
+\end{lstlisting}
+
+\textbf{Query Explanation:}
+\textit{[Explanation of query functionality]}
+
+\subsection{Booking Page}
+
+\textbf{Route:} \texttt{/book/<flight\_id>}
+
+\textbf{Template:} \texttt{booking.html}
+
+\textbf{Description:}
+\textit{[Description of booking process]}
+
+\textbf{SQL Queries:}
+
+\begin{lstlisting}[caption={Create Booking - Insert Query}]
+-- Query purpose: [Explanation]
+-- [SQL query to be inserted]
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Update Seat Availability}]
+-- Query purpose: [Explanation]
+-- [SQL query to be inserted]
+\end{lstlisting}
+
+\textbf{Query Explanations:}
+\textit{[Detailed explanation of transaction handling and data integrity]}
+
+\subsection{Booking Confirmation Page}
+
+\textbf{Route:} \texttt{/confirmation/<booking\_id>}
+
+\textbf{Template:} \texttt{confirmation.html}
+
+\textbf{Description:}
+\textit{[Description of confirmation display]}
+
+\textbf{SQL Queries:}
+\textit{[Queries for retrieving booking details and generating ticket]}
+
+\subsection{My Bookings Page}
+
+\textbf{Route:} \texttt{/my-bookings}
+
+\textbf{Template:} \texttt{my\_bookings.html}
+
+\textbf{Description:}
+\textit{[Description of booking history functionality]}
+
+\textbf{SQL Queries:}
+\textit{[Queries for retrieving user's booking history]}
+
+\section{Administrative Portal}
+
+\subsection{Admin Dashboard}
+
+\textbf{Route:} \texttt{/admin}
+
+\textbf{Template:} \texttt{admin\_dashboard.html}
+
+\textbf{Description:}
+\textit{[Description of admin dashboard features]}
+
+\textbf{SQL Queries:}
+
+\begin{lstlisting}[caption={Dashboard Statistics}]
+-- Query purpose: [Explanation]
+-- [SQL queries for dashboard metrics]
+\end{lstlisting}
+
+\subsection{Flight Management}
+
+\textbf{Route:} \texttt{/admin/flights}
+
+\textbf{Template:} \texttt{manage\_flights.html}
+
+\textbf{Description:}
+\textit{[Description of flight CRUD operations]}
+
+\textbf{SQL Queries:}
+\textit{[Queries for creating, reading, updating, and deleting flights]}
+
+\subsection{Route Management}
+
+\textbf{Route:} \texttt{/admin/routes}
+
+\textbf{Template:} \texttt{manage\_routes.html}
+
+\textbf{Description:}
+\textit{[Description of route management functionality]}
+
+\textbf{SQL Queries:}
+\textit{[Queries for route operations]}
+
+\subsection{Pricing Management}
+
+\textbf{Route:} \texttt{/admin/pricing}
+
+\textbf{Template:} \texttt{manage\_pricing.html}
+
+\textbf{Description:}
+\textit{[Description of pricing management with Candidate Key enforcement]}
+
+\textbf{SQL Queries:}
+
+\begin{lstlisting}[caption={Add New Pricing - Respects Candidate Key}]
+-- Query purpose: Insert new pricing while enforcing unique constraint
+-- on Candidate Key (Route_ID, Class_ID, Valid_From)
+INSERT INTO Pricing (Route_ID, Class_ID, Valid_From, Base_Price)
+VALUES (?, ?, ?, ?);
+-- This will fail if combination already exists due to UNIQUE constraint
+\end{lstlisting}
+
+\textbf{Query Explanation:}
+\textit{[Explanation of how the Candidate Key constraint prevents duplicate pricing entries]}
+
+\subsection{Aircraft Management}
+
+\textbf{Route:} \texttt{/admin/aircraft}
+
+\textbf{Template:} \texttt{manage\_aircraft.html}
+
+\textbf{Description:}
+\textit{[Description of aircraft fleet management]}
+
+\textbf{SQL Queries:}
+\textit{[Queries for aircraft operations]}
+
+\subsection{Reports and Analytics}
+
+\textbf{Route:} \texttt{/admin/reports}
+
+\textbf{Template:} \texttt{reports.html}
+
+\textbf{Description:}
+\textit{[Description of reporting functionality]}
+
+\textbf{SQL Queries:}
+
+\begin{lstlisting}[caption={Revenue Report Query}]
+-- Query purpose: [Explanation]
+-- [Complex analytical queries]
+\end{lstlisting}
+
+\section{API Endpoints}
+
+\subsection{RESTful API Documentation}
+
+\textbf{Base URL:} \texttt{/api/v1}
+
+\textbf{Endpoints:}
+\begin{itemize}
+    \item \texttt{GET /flights} - \textit{[Description and SQL query]}
+    \item \texttt{POST /bookings} - \textit{[Description and SQL query]}
+    \item \textit{[Additional endpoints]}
+\end{itemize}
+
+\section{Query Performance Considerations}
+
+\subsection{Index Usage}
+\textit{[Analysis of how indexes improve query performance]}
+
+\subsection{Query Optimization}
+\textit{[Discussion of optimization techniques applied]}
+
+\newpage
+
+% Chapter 7: Work Contribution
+\chapter{Work Contribution}
+
+\section{Team Member Responsibilities}
+
+This chapter outlines the division of work among team members and individual contributions to the Flight Management System project.
+
+\section{Individual Contributions}
+
+\subsection{Immaduddin Durrani (ERP: 29204)}
+
+\textbf{Primary Role:} Backend Development - Flask API
+
+\textbf{Responsibilities:}
+\begin{itemize}
+    \item Design and implementation of Flask application architecture
+    \item Development of RESTful API endpoints
+    \item Implementation of business logic and data validation
+    \item Database connection and query execution management
+    \item Integration of frontend templates with backend logic
+    \item Session management and user authentication
+    \item Error handling and exception management
+    \item API testing and debugging
+    \item Performance optimization of backend operations
+\end{itemize}
+
+\textbf{Key Contributions:}
+\begin{itemize}
+    \item Developed the complete Flask application structure
+    \item Implemented all API routes for flight search, booking, and management
+    \item Created database connection pooling and transaction management
+    \item Developed data access layer and ORM integration
+    \item Implemented security measures and input validation
+    \item Created helper functions and utility modules
+    \item Integrated payment processing logic
+    \item Developed logging and monitoring functionality
+\end{itemize}
+
+\textbf{Technologies Used:}
+\begin{itemize}
+    \item Python 3.x
+    \item Flask Framework
+    \item Flask-SQLAlchemy
+    \item Flask-Session
+    \item MySQL Connector
+    \item RESTful API design principles
+\end{itemize}
+
+\subsection{Hamza Kashif (ERP: 29022)}
+
+\textbf{Primary Role:} Frontend Development - HTML Templates
+
+\textbf{Responsibilities:}
+\begin{itemize}
+    \item Design and development of user interface templates
+    \item HTML structure and semantic markup
+    \item CSS styling and responsive design implementation
+    \item JavaScript functionality for dynamic interactions
+    \item Template rendering and data presentation
+    \item Form design and validation
+    \item User experience optimization
+    \item Cross-browser compatibility testing
+    \item Accessibility implementation
+\end{itemize}
+
+\textbf{Key Contributions:}
+\begin{itemize}
+    \item Created all HTML templates for passenger portal
+    \item Developed administrative interface templates
+    \item Implemented responsive design for mobile and desktop
+    \item Created interactive forms for search and booking
+    \item Developed dynamic data tables for displaying results
+    \item Implemented client-side form validation
+    \item Created CSS stylesheets for consistent theming
+    \item Developed JavaScript for AJAX requests and DOM manipulation
+    \item Implemented loading indicators and user feedback elements
+\end{itemize}
+
+\textbf{Technologies Used:}
+\begin{itemize}
+    \item HTML5
+    \item CSS3 (with Flexbox and Grid)
+    \item JavaScript (ES6+)
+    \item Bootstrap Framework
+    \item jQuery
+    \item Jinja2 Templating Engine
+    \item FontAwesome Icons
+\end{itemize}
+
+\subsection{Abdullah Khan Sherwani (ERP: 27880)}
+
+\textbf{Primary Role:} Database Design and Requirements Gathering
+
+\textbf{Responsibilities:}
+\begin{itemize}
+    \item Database schema design and modeling
+    \item Entity-Relationship diagram creation
+    \item Normalization analysis and optimization
+    \item DDL script development
+    \item Constraint definition and implementation
+    \item Stakeholder interview coordination
+    \item Requirements documentation
+    \item Business rules definition
+    \item Database optimization and indexing strategy
+\end{itemize}
+
+\textbf{Key Contributions:}
+\begin{itemize}
+    \item Designed complete database schema for the Flight Management System
+    \item Created comprehensive ER diagrams using Chen's/Crow's Foot notation
+    \item Performed normalization analysis up to 3NF
+    \item Implemented the pragmatic surrogate key approach with Candidate Keys
+    \item Defined all primary keys, foreign keys, and constraints
+    \item Created unique constraint on Pricing table (Route\_ID, Class\_ID, Valid\_From)
+    \item Designed indexes for query optimization
+\item Created triggers for business rule enforcement
+\item Developed stored procedures for complex operations
+\item Conducted (or coordinated) stakeholder interviews
+\item Documented business requirements and rules
+\item Created views for data abstraction
+\item Prepared test data for database validation
+\end{itemize}
+\textbf{Technologies and Tools Used:}
+\begin{itemize}
+\item MySQL Database
+\item DBDesigner for schema visualization
+\item ER diagram tools (draw.io / Lucidchart)
+\item SQL DDL and DML
+\item Database normalization techniques
+\item Interview and requirements gathering methodologies
+\end{itemize}
+\section{Collaborative Efforts}
+\subsection{Team Meetings and Coordination}
+\begin{itemize}
+\item Regular team meetings to discuss progress and challenges
+\item Code review sessions for quality assurance
+\item Integration testing across frontend, backend, and database
+\item Documentation collaboration and review
+\end{itemize}
+\subsection{Integration Points}
+\begin{itemize}
+\item \textbf{Backend-Database:} Immaduddin worked closely with Abdullah to ensure efficient query execution and proper use of database constraints
+\item \textbf{Frontend-Backend:} Hamza collaborated with Immaduddin to ensure proper data flow between templates and API endpoints
+\item \textbf{Full Stack:} All team members participated in end-to-end testing and bug fixing
+\end{itemize}
+\subsection{Shared Responsibilities}
+\begin{itemize}
+\item System testing and quality assurance
+\item Bug identification and resolution
+\item Documentation and report preparation
+\item Project presentation preparation
+\item User acceptance testing
+\end{itemize}
+\section{Timeline and Milestones}
+\subsection{Project Phases}
+\begin{itemize}
+\item \textbf{Phase 1:} Requirements gathering and database design (Abdullah)
+\item \textbf{Phase 2:} Backend API development (Immaduddin)
+\item \textbf{Phase 3:} Frontend template development (Hamza)
+\item \textbf{Phase 4:} Integration and testing (All members)
+\item \textbf{Phase 5:} Documentation and finalization (All members)
+\end{itemize}
+\section{Lessons Learned}
+\subsection{Technical Insights}
+\textit{[Reflections on technical challenges and solutions]}
+\subsection{Team Collaboration}
+\textit{[Observations on teamwork and collaboration effectiveness]}
+\subsection{Future Improvements}
+\textit{[Suggestions for future enhancements and optimizations]}
+\newpage
+% Appendices
+\appendix
+\chapter{Additional Resources}
+\section{Complete DDL Scripts}
+\textit{[Full database creation scripts]}
+\section{Sample Data Sets}
+\textit{[Complete test data]}
+\section{API Documentation}
+\textit{[Detailed API specifications]}
+\section{User Manual}
+\textit{[End-user documentation]}
+\section{Installation Guide}
+\textit{[System setup and deployment instructions]}
+\end{document}
