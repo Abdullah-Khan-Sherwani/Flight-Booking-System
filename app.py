@@ -5,22 +5,26 @@ IAT Airlines Flight Booking System - Main Application
 This application uses the following Oracle database objects from database-3NF.sql:
 
 === SEQUENCES (Auto-generated IDs) ===
-- Passenger_Seq: Generates unique Passenger_ID values
-- Reservation_Seq: Generates ticket numbers in format IAT-YYYYMMDD-NNNNNN
+- Passenger_Seq: Generates unique Passenger_ID values (via trigger)
+- Reservation_Seq: Generates ticket numbers in format IAT-YYYYMMDD-NNNNNN (via USP_Create_Single_Reservation)
 - Booking_Seq: Used by Generate_PNR function for booking IDs
 
-=== FUNCTIONS ===
-- Generate_PNR(): Generates random 6-character alphanumeric booking ID (used by TRG_Generate_Booking_PNR)
+=== FUNCTIONS (Called directly or via procedures) ===
+- Generate_PNR(): Generates random 6-character alphanumeric booking ID (via TRG_Generate_Booking_PNR)
 - FN_Get_Infant_Type(booking_id, instance_id, passenger_id): Determines LAP_INFANT vs SEATED_INFANT
-- FN_Get_Infant_Price(instance_id, infant_type, class_id): Calculates infant pricing (0 or 50%)
-- FN_Calculate_Refund(instance_id, price_charged): Calculates refund based on hours until departure
+- FN_Get_Infant_Price(instance_id, infant_type, class_id): Calculates infant pricing (via USP_Create_Single_Reservation)
+- FN_Calculate_Refund(reservation_id): Calculates refund based on hours until departure (via USP_Cancel_Reservation)
+- FN_Get_Booking_Total(booking_id): Returns sum of reservation prices for a booking
 
-=== STORED PROCEDURES ===
-- USP_Make_Reservation: Smart booking with auto-seat assignment (available but using direct inserts)
+=== STORED PROCEDURES (Called from Python) ===
+- USP_Get_Or_Create_Passenger: Smart passenger creation/lookup with profile matching
+- USP_Create_Booking: Creates booking with auto-generated PNR
+- USP_Create_Single_Reservation: Creates reservation with pricing lookup and ID generation
+- USP_Create_Payment: Creates payment record with auto-generated payment ID
 - USP_Delete_User_Account: Cascading delete for user account and all related data
 - USP_Cancel_Reservation: Cancel reservation with automatic refund calculation
 
-=== TRIGGERS (Automatically fired) ===
+=== TRIGGERS (Automatically fired by database) ===
 - TRG_Generate_Booking_PNR: Auto-generates 6-char booking ID on INSERT into Booking
 - TRG_Validate_Seat_Exists: Validates seat exists on aircraft before reservation
 - TRG_Infant_Booking_Rules: Enforces infant booking rules and auto-calculates prices
@@ -28,7 +32,7 @@ This application uses the following Oracle database objects from database-3NF.sq
 - TRG_Auto_Log_Booking_Cancellation: Logs to Cancellation_Log when booking cancelled
 - TRG_Auto_Reciprocal_Family: Creates reciprocal family relationship on ACCEPT
 
-=== VIEWS ===
+=== VIEWS (Used in queries) ===
 - View_Flight_Availability: Shows total capacity, booked seats, and remaining seats per flight
 - View_Booking_Infant_Summary: Summarizes bookings with adult/lap-infant/seated-infant counts
 - View_Past_Passengers: Returns passengers previously booked by a lead user with trip history
@@ -2375,27 +2379,8 @@ def process_booking():
             # --- END OLD CODE ---
             
             # =================================================================
-            # Insert passengers with proper is_self and existing_passenger_id handling
-            # IMPORTANT: If user modifies auto-filled details, create NEW passenger
-            # to avoid corrupting stored profiles (own or family members')
-            # =================================================================
-            
-            # --- OLD details_match function (kept for reference, now in stored procedure) ---
-            # def details_match(stored, submitted):
-            #     """Compare stored passenger data with submitted form data.
-            #     Returns True if key identity fields match (allowing passport updates)."""
-            #     # stored = (Passenger_ID, Title, First_Name, Last_Name, Gender, DOB_str, Passport)
-            #     # Check key identity fields - name, gender, DOB must match exactly
-            #     name_match = (stored[2].upper() == submitted['first_name'].upper() and 
-            #                  stored[3].upper() == submitted['last_name'].upper())
-            #     gender_match = stored[4].upper() == submitted['gender'].upper()
-            #     # DOB comparison - stored is 'YYYY-MM-DD' string
-            #     dob_match = stored[5] == submitted['date_of_birth']
-            #     return name_match and gender_match and dob_match
-            # --- END OLD ---
-            
-            # =================================================================
             # CREATE PASSENGERS - Using USP_Get_Or_Create_Passenger stored procedure
+            # Handles all 3 cases: existing passenger, linked user profile, new guest
             # =================================================================
             passenger_ids = []
             for i, passenger in enumerate(passenger_data):
@@ -2408,204 +2393,28 @@ def process_booking():
                 
                 print(f"DEBUG - is_self={is_self}, existing_id={existing_passenger_id}, is_infant={is_infant}")
                 
-                # Call stored procedure to get or create passenger
+                # Call stored procedure to handle all passenger creation logic
                 passenger_id_var = cursor.var(int)
                 cursor.callproc('USP_Get_Or_Create_Passenger', [
-                    existing_passenger_id,                           # p_Existing_Passenger_ID
-                    lead_user_id,                                    # p_Linked_User_ID  
-                    1 if is_self else 0,                             # p_Is_Self (1=true, 0=false)
-                    passenger['first_name'],                         # p_First_Name
-                    passenger['last_name'],                          # p_Last_Name
-                    datetime.strptime(passenger['date_of_birth'], '%Y-%m-%d'),  # p_DOB (as DATE)
-                    passenger['gender'],                             # p_Gender
-                    passenger['passport_number'],                    # p_Passport
-                    passenger['title'],                              # p_Title
-                    passenger_id_var                                 # p_Out_Passenger_ID (OUT)
+                    existing_passenger_id,                    # p_Existing_Passenger_ID
+                    lead_user_id,                             # p_Linked_User_ID
+                    1 if is_self else 0,                      # p_Is_Self (Oracle uses NUMBER for boolean)
+                    passenger['first_name'],                  # p_First_Name
+                    passenger['last_name'],                   # p_Last_Name
+                    passenger['date_of_birth'],               # p_DOB (string 'YYYY-MM-DD' converted by Oracle)
+                    passenger['gender'],                      # p_Gender
+                    passenger['passport_number'],             # p_Passport
+                    passenger['title'],                       # p_Title
+                    passenger_id_var                          # p_Out_Passenger_ID (OUT)
                 ])
+                
                 passenger_id = passenger_id_var.getvalue()
                 passenger_ids.append(passenger_id)
-                print(f"DEBUG - Got passenger ID via procedure: {passenger_id}")
-            
-            # --- OLD PASSENGER CREATION CODE (commented out for revert if needed) ---
-            # for i, passenger in enumerate(passenger_data):
-            #     print(f"DEBUG - Processing passenger {i}: {passenger['first_name']} {passenger['last_name']} (Title: {passenger['title']})")
-            #     
-            #     # Get the flags from passenger data
-            #     is_self = passenger.get('is_self', False)
-            #     existing_passenger_id = passenger.get('existing_passenger_id')
-            #     is_infant = passenger.get('title') == 'INF'
-            #     
-            #     print(f"DEBUG - is_self={is_self}, existing_id={existing_passenger_id}, is_infant={is_infant}")
-            #     
-            #     # CASE 1: existing_passenger_id provided (from "Add from Past Bookings" or "Add Myself")
-            #     # Check if details were MODIFIED - if so, create NEW passenger instead of updating
-            #     if existing_passenger_id:
-            #         # Fetch the stored passenger details to compare
-            #         cursor.execute("""
-            #             SELECT Passenger_ID, Title, First_Name, Last_Name, Gender, 
-            #                    TO_CHAR(Date_Of_Birth, 'YYYY-MM-DD'), Passport_Num
-            #             FROM Passenger WHERE Passenger_ID = :pid
-            #         """, pid=existing_passenger_id)
-            #         stored_data = cursor.fetchone()
-            #         
-            #         if stored_data and details_match(stored_data, passenger):
-            #             # Details UNCHANGED - safe to reuse existing passenger
-            #             passenger_id = existing_passenger_id
-            #             print(f"DEBUG - Details unchanged, reusing existing passenger ID: {passenger_id}")
-            #             
-            #             # Only update passport if it changed (minor update allowed)
-            #             if stored_data[6] != passenger['passport_number']:
-            #                 cursor.execute("""
-            #                     UPDATE Passenger SET Passport_Num = :passport
-            #                     WHERE Passenger_ID = :pid
-            #                 """, passport=passenger['passport_number'], pid=passenger_id)
-            #                 print(f"DEBUG - Updated passport for passenger {passenger_id}")
-            #             
-            #             passenger_ids.append(passenger_id)
-            #         else:
-            #             # Details MODIFIED - create NEW passenger to avoid corrupting stored profile
-            #             print(f"DEBUG - Details modified from stored profile, creating NEW passenger")
-            #             cursor.execute("""
-            #                 INSERT INTO Passenger 
-            #                 (First_Name, Last_Name, Date_Of_Birth, Gender, Passport_Num, Title)
-            #                 VALUES (:first_name, :last_name, TO_DATE(:dob, 'YYYY-MM-DD'), :gender, :passport, :title)
-            #             """, 
-            #             first_name=passenger['first_name'],
-            #             last_name=passenger['last_name'],
-            #             dob=passenger['date_of_birth'],
-            #             gender=passenger['gender'],
-            #             passport=passenger['passport_number'],
-            #             title=passenger['title'])
-            #             
-            #             # Get the new passenger ID
-            #             cursor.execute("""
-            #                 SELECT Passenger_ID FROM Passenger 
-            #                 WHERE First_Name = :first_name 
-            #                 AND Last_Name = :last_name 
-            #                 AND Date_Of_Birth = TO_DATE(:dob, 'YYYY-MM-DD')
-            #                 ORDER BY Passenger_ID DESC
-            #                 FETCH FIRST 1 ROW ONLY
-            #             """, 
-            #             first_name=passenger['first_name'], 
-            #             last_name=passenger['last_name'], 
-            #             dob=passenger['date_of_birth'])
-            #             new_passenger = cursor.fetchone()
-            #             passenger_ids.append(new_passenger[0])
-            #             print(f"DEBUG - Created new passenger ID: {new_passenger[0]} (original was {existing_passenger_id})")
-            #         
-            #     # CASE 2: User clicked "Add Myself" but doesn't have existing profile
-            #     # AND the passenger is NOT an infant (infants should never be linked to users)
-            #     elif is_self and lead_user_id and not is_infant:
-            #         # Check if user already has a linked passenger profile
-            #         cursor.execute("""
-            #             SELECT Passenger_ID, Title, First_Name, Last_Name, Gender,
-            #                    TO_CHAR(Date_Of_Birth, 'YYYY-MM-DD'), Passport_Num
-            #             FROM Passenger WHERE Linked_User_ID = :user_id
-            #         """, user_id=lead_user_id)
-            #         existing_linked = cursor.fetchone()
-            #         
-            #         if existing_linked:
-            #             # User has a profile - check if details match
-            #             if details_match(existing_linked, passenger):
-            #                 # Details match - reuse existing profile
-            #                 passenger_id = existing_linked[0]
-            #                 print(f"DEBUG - Details match linked profile, reusing passenger ID: {passenger_id}")
-            #                 
-            #                 # Only update passport if changed
-            #                 if existing_linked[6] != passenger['passport_number']:
-            #                     cursor.execute("""
-            #                         UPDATE Passenger SET Passport_Num = :passport
-            #                         WHERE Passenger_ID = :pid
-            #                     """, passport=passenger['passport_number'], pid=passenger_id)
-            #                 
-            #                 passenger_ids.append(passenger_id)
-            #             else:
-            #                 # Details modified - create NEW unlinked passenger
-            #                 print(f"DEBUG - Details modified from linked profile, creating NEW passenger")
-            #                 cursor.execute("""
-            #                     INSERT INTO Passenger 
-            #                     (First_Name, Last_Name, Date_Of_Birth, Gender, Passport_Num, Title)
-            #                     VALUES (:first_name, :last_name, TO_DATE(:dob, 'YYYY-MM-DD'), :gender, :passport, :title)
-            #                 """, 
-            #                 first_name=passenger['first_name'],
-            #                 last_name=passenger['last_name'],
-            #                 dob=passenger['date_of_birth'],
-            #                 gender=passenger['gender'],
-            #                 passport=passenger['passport_number'],
-            #                 title=passenger['title'])
-            #                 
-            #                 cursor.execute("""
-            #                     SELECT Passenger_ID FROM Passenger 
-            #                     WHERE First_Name = :first_name 
-            #                     AND Last_Name = :last_name 
-            #                     AND Date_Of_Birth = TO_DATE(:dob, 'YYYY-MM-DD')
-            #                     ORDER BY Passenger_ID DESC
-            #                     FETCH FIRST 1 ROW ONLY
-            #                 """, 
-            #                 first_name=passenger['first_name'], 
-            #                 last_name=passenger['last_name'], 
-            #                 dob=passenger['date_of_birth'])
-            #                 new_passenger = cursor.fetchone()
-            #                 passenger_ids.append(new_passenger[0])
-            #                 print(f"DEBUG - Created new passenger ID: {new_passenger[0]}")
-            #         else:
-            #             # Create new profile linked to user
-            #             print(f"DEBUG - Creating NEW passenger profile linked to user {lead_user_id}")
-            #             cursor.execute("""
-            #                 INSERT INTO Passenger 
-            #                 (Linked_User_ID, First_Name, Last_Name, Date_Of_Birth, Gender, Passport_Num, Title)
-            #                 VALUES (:user_id, :first_name, :last_name, TO_DATE(:dob, 'YYYY-MM-DD'), :gender, :passport, :title)
-            #             """, 
-            #             user_id=lead_user_id,
-            #             first_name=passenger['first_name'],
-            #             last_name=passenger['last_name'],
-            #             dob=passenger['date_of_birth'],
-            #             gender=passenger['gender'],
-            #             passport=passenger['passport_number'],
-            #             title=passenger['title'])
-            #             
-            #             # Get the generated passenger ID
-            #             cursor.execute("SELECT Passenger_ID FROM Passenger WHERE Linked_User_ID = :user_id", user_id=lead_user_id)
-            #             passenger_result = cursor.fetchone()
-            #             passenger_ids.append(passenger_result[0])
-            #             print(f"DEBUG - Created linked passenger ID: {passenger_result[0]}")
-            #             
-            #     # CASE 3: Guest passenger, additional passenger, or infant
-            #     # These should NEVER have Linked_User_ID set
-            #     else:
-            #         print(f"DEBUG - Creating guest/additional passenger: {passenger['first_name']} {passenger['last_name']}")
-            #         cursor.execute("""
-            #             INSERT INTO Passenger 
-            #             (First_Name, Last_Name, Date_Of_Birth, Gender, Passport_Num, Title)
-            #             VALUES (:first_name, :last_name, TO_DATE(:dob, 'YYYY-MM-DD'), :gender, :passport, :title)
-            #         """, 
-            #         first_name=passenger['first_name'],
-            #         last_name=passenger['last_name'],
-            #         dob=passenger['date_of_birth'],
-            #         gender=passenger['gender'],
-            #         passport=passenger['passport_number'],
-            #         title=passenger['title'])
-            #         
-            #         # Get the generated passenger ID
-            #         cursor.execute("""
-            #             SELECT Passenger_ID FROM Passenger 
-            #             WHERE First_Name = :first_name 
-            #             AND Last_Name = :last_name 
-            #             AND Date_Of_Birth = TO_DATE(:dob, 'YYYY-MM-DD')
-            #             ORDER BY Passenger_ID DESC
-            #             FETCH FIRST 1 ROW ONLY
-            #         """, 
-            #         first_name=passenger['first_name'], 
-            #         last_name=passenger['last_name'], 
-            #         dob=passenger['date_of_birth'])
-            #         passenger_result = cursor.fetchone()
-            #         passenger_ids.append(passenger_result[0])
-            #         print(f"DEBUG - Created guest passenger ID: {passenger_result[0]}")
-            # --- END OLD PASSENGER CREATION CODE ---
+                print(f"DEBUG - USP_Get_Or_Create_Passenger returned passenger ID: {passenger_id}")
             
             # =================================================================
             # CREATE RESERVATIONS - Using USP_Create_Single_Reservation stored procedure
-            # Helper function to parse seat string (e.g., "10A" -> (10, "A"))
+            # Procedure handles: ID generation, pricing lookup, infant type determination
             # =================================================================
             def parse_seat(seat_str):
                 """Parse seat string like '10A' into (row_num, seat_letter)"""
@@ -2652,23 +2461,25 @@ def process_booking():
                         print(f"ERROR - Not enough seats for passenger {i}")
                         continue
                 
-                # Call stored procedure for reservation
+                # Call stored procedure for reservation creation
                 res_id_var = cursor.var(str)
                 price_var = cursor.var(float)
                 cursor.callproc('USP_Create_Single_Reservation', [
-                    booking_id,        # p_Booking_ID
-                    passenger_id,      # p_Passenger_ID
-                    outbound_flight_id,# p_Instance_ID
-                    row_num,           # p_Row_Number
-                    seat_letter,       # p_Seat_Letter
-                    travel_class,      # p_Travel_Class
-                    passenger_type,    # p_Passenger_Type
-                    res_id_var,        # p_Out_Res_ID (OUT)
-                    price_var          # p_Out_Price (OUT)
+                    booking_id,         # p_Booking_ID
+                    passenger_id,       # p_Passenger_ID
+                    outbound_flight_id, # p_Instance_ID
+                    row_num,            # p_Row_Number
+                    seat_letter,        # p_Seat_Letter
+                    travel_class,       # p_Travel_Class
+                    passenger_type,     # p_Passenger_Type
+                    res_id_var,         # p_Out_Res_ID (OUT)
+                    price_var           # p_Out_Price (OUT)
                 ])
                 print(f"DEBUG - Created outbound {passenger_type} reservation: {res_id_var.getvalue()} for seat {row_num}{seat_letter}, price: {price_var.getvalue()}")
             
+            # =================================================================
             # Create reservations for return flight if applicable
+            # =================================================================
             if return_flight_id:
                 return_seat_index = 0
                 actual_return_seats = [s for s in selected_return_seats if s != 'INFANT']
@@ -2708,15 +2519,15 @@ def process_booking():
                     res_id_var = cursor.var(str)
                     price_var = cursor.var(float)
                     cursor.callproc('USP_Create_Single_Reservation', [
-                        booking_id,        # p_Booking_ID
-                        passenger_id,      # p_Passenger_ID
-                        return_flight_id,  # p_Instance_ID
-                        row_num,           # p_Row_Number
-                        seat_letter,       # p_Seat_Letter
-                        travel_class,      # p_Travel_Class
-                        passenger_type,    # p_Passenger_Type
-                        res_id_var,        # p_Out_Res_ID (OUT)
-                        price_var          # p_Out_Price (OUT)
+                        booking_id,         # p_Booking_ID
+                        passenger_id,       # p_Passenger_ID
+                        return_flight_id,   # p_Instance_ID
+                        row_num,            # p_Row_Number
+                        seat_letter,        # p_Seat_Letter
+                        travel_class,       # p_Travel_Class
+                        passenger_type,     # p_Passenger_Type
+                        res_id_var,         # p_Out_Res_ID (OUT)
+                        price_var           # p_Out_Price (OUT)
                     ])
                     print(f"DEBUG - Created return {passenger_type} reservation: {res_id_var.getvalue()} for seat {row_num}{seat_letter}, price: {price_var.getvalue()}")
             
@@ -2725,63 +2536,32 @@ def process_booking():
             # =================================================================
             cursor.execute("SELECT FN_Get_Booking_Total(:booking_id) FROM DUAL", booking_id=booking_id)
             actual_total = cursor.fetchone()[0]
-            print(f"DEBUG - Actual total from FN_Get_Booking_Total: {actual_total}")
+            print(f"DEBUG - Calculated total via FN_Get_Booking_Total: {actual_total}")
             
             # Create payment via stored procedure
             payment_id_var = cursor.var(str)
             cursor.callproc('USP_Create_Payment', [
-                booking_id,        # p_Booking_ID
-                actual_total,      # p_Amount
-                'CREDIT_CARD',     # p_Payment_Method
-                payment_id_var     # p_Out_Payment_ID (OUT)
+                booking_id,         # p_Booking_ID
+                actual_total,       # p_Amount
+                'CREDIT_CARD',      # p_Payment_Method
+                payment_id_var      # p_Out_Payment_ID (OUT)
             ])
-            print(f"DEBUG - Created payment: {payment_id_var.getvalue()}")
+            print(f"DEBUG - Created payment via USP_Create_Payment: {payment_id_var.getvalue()}")
             
             conn.commit()
             print(f"DEBUG - All database operations completed successfully!")
             
-            # --- OLD RESERVATION AND PAYMENT CODE (commented out for revert if needed) ---
-            # # =================================================================
-            # # Create reservations for outbound flight
-            # # Uses FN_Get_Infant_Type for database-side infant type determination
-            # # SQL triggers handle price calculation automatically
-            # # =================================================================
+            # --- OLD INLINE SQL VERSION (commented out for reference) ---
             # # Track seat index for passengers needing seats (adults + seated infants)
             # seat_index = 0
             # actual_outbound_seats = [s for s in selected_outbound_seats if s != 'INFANT']
-            # 
             # for i, passenger in enumerate(passenger_data):
-            #     passenger_id = passenger_ids[i]
-            #     is_infant = passenger.get('title') == 'INF'
-            #     
             #     res_id = generate_reservation_id(cursor)
-            #     
-            #     if is_infant:
-            #         # Use FN_Get_Infant_Type to determine LAP_INFANT vs SEATED_INFANT
-            #         cursor.execute("""
-            #             SELECT FN_Get_Infant_Type(:booking_id, :instance_id, :passenger_id) FROM DUAL
-            #         """, booking_id=booking_id, instance_id=outbound_flight_id, passenger_id=passenger_id)
-            #         passenger_type = cursor.fetchone()[0]
-            #         
-            #         print(f"DEBUG - FN_Get_Infant_Type returned: {passenger_type} for passenger {passenger_id}")
-            #         
-            #         if passenger_type == 'LAP_INFANT':
-            #             print(f"DEBUG - Creating outbound LAP_INFANT reservation: {res_id}")
-            #             cursor.execute("""
-            #                 INSERT INTO Reservation 
-            #                 (Reservation_ID, Booking_ID, Passenger_ID, Instance_ID, Row_Number, Seat_Letter, Price_Charged, Passenger_Type)
-            #                 VALUES (:res_id, :booking_id, :passenger_id, :instance_id, NULL, NULL, 0, :pax_type)
-            #             """, res_id=res_id, booking_id=booking_id, passenger_id=passenger_id, instance_id=outbound_flight_id, pax_type=passenger_type)
-            #         elif passenger_type == 'SEATED_INFANT':
-            #             # ... (extensive seat parsing and insertion code)
-            #             pass
-            #     else:
-            #         # ADULT handling...
-            #         pass
+            #     # ... inline INSERT INTO Reservation ...
             # 
-            # # Return flight handling...
-            # # Payment creation...
-            # --- END OLD RESERVATION AND PAYMENT CODE ---
+            # payment_id = generate_sequential_id("PAY", "Payment", "Payment_ID", cursor)
+            # cursor.execute("INSERT INTO Payment ...")
+            # --- END OLD INLINE SQL VERSION ---
             
             # Clear session data
             session.pop('passenger_data', None)
@@ -2808,11 +2588,17 @@ def process_booking():
             print("Database error during booking:", e)
             print("Error type:", type(e).__name__)
             
-            error_msg = f"Booking failed: {str(e)}"
-            if "unique constraint" in str(e):
-                error_msg += ". This usually means the booking reference already exists. Please try again."
-            elif "parent key not found" in str(e):
-                error_msg += ". This usually means a seat or passenger reference is invalid."
+            error_str = str(e).upper()
+            if "UQ_PASS_INSTANCE" in error_str:
+                error_msg = "Booking failed: One or more passengers already have a reservation on this flight. A person cannot book the same flight twice."
+            elif "UQ_SEAT_INSTANCE" in error_str:
+                error_msg = "Booking failed: One or more selected seats are no longer available. Please go back and select different seats."
+            elif "unique constraint" in error_str.lower():
+                error_msg = f"Booking failed: A duplicate record was detected. Please try again or contact support."
+            elif "parent key not found" in error_str.lower():
+                error_msg = "Booking failed: A seat or passenger reference is invalid. Please try again."
+            else:
+                error_msg = f"Booking failed: {str(e)}"
             return render_template('error.html', error=error_msg)
             
         finally:
