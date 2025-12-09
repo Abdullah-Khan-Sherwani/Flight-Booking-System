@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Reschedule Confirmation - IAT Airlines</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         .confirmation-box {
             background: white;
@@ -17,6 +18,13 @@
             font-size: 60px;
             color: #28a745;
             margin-bottom: 20px;
+        }
+        .download-status {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
         }
     </style>
 </head>
@@ -63,12 +71,18 @@
                         The original seat has been released for other passengers.
                     </div>
 
+                    <!-- Auto Download Status -->
+                    <div id="autoDownloadStatus" class="download-status mt-3">
+                        <div class="spinner-border text-success me-2" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <strong>Preparing your updated tickets for download...</strong>
+                        <p class="mb-0 mt-1">Your tickets will download automatically in a few seconds.</p>
+                    </div>
+
                     <div class="mt-4">
-                        <a href="{{ url_for('view_ticket', reservation_id=new_reservation_id) }}" class="btn btn-primary me-2">
-                            View New Ticket
-                        </a>
-                        <a href="{{ url_for('download_tickets', booking_id=booking_id) }}" class="btn btn-success me-2">
-                            Download All Tickets
+                        <a href="{{ url_for('download_tickets', booking_id=booking_id) }}" class="btn btn-success me-2" id="downloadButton">
+                            <i class="fas fa-download me-2"></i>Download All Tickets
                         </a>
                         <a href="{{ url_for('manage_bookings') }}" class="btn btn-secondary me-2">Manage Bookings</a>
                         <a href="{{ url_for('home') }}" class="btn btn-outline-secondary">Back to Home</a>
@@ -77,5 +91,58 @@
             </div>
         </div>
     </div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const bookingId = '{{ booking_id }}';
+        const downloadButton = document.getElementById('downloadButton');
+        const autoDownloadStatus = document.getElementById('autoDownloadStatus');
+        
+        console.log('Auto download enabled for reschedule');
+        console.log('Booking ID:', bookingId);
+        
+        // Trigger automatic download after a short delay
+        setTimeout(function() {
+            console.log('Triggering automatic download for rescheduled booking:', bookingId);
+            
+            // Create a hidden iframe to trigger the download
+            const iframe = document.createElement('iframe');
+            iframe.style.display = 'none';
+            iframe.src = `/download-tickets/${bookingId}`;
+            document.body.appendChild(iframe);
+            
+            // Update status message after download starts
+            setTimeout(function() {
+                autoDownloadStatus.innerHTML = `
+                    <i class="fas fa-check-circle text-success me-2"></i>
+                    <strong>Tickets downloaded successfully!</strong>
+                    <p class="mb-0 mt-1">Check your downloads folder for the ZIP file containing all tickets.</p>
+                `;
+                
+                // Update download button to indicate success
+                downloadButton.innerHTML = '<i class="fas fa-redownload me-2"></i>Download Tickets Again';
+                
+            }, 2000);
+            
+        }, 1500); // 1.5 second delay before starting download
+        
+        // Add click handler for manual download button
+        downloadButton.addEventListener('click', function(e) {
+            console.log('Manual download triggered for booking:', bookingId);
+            
+            // Show downloading status
+            const originalText = downloadButton.innerHTML;
+            downloadButton.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Downloading...';
+            downloadButton.disabled = true;
+            
+            // Re-enable button after download
+            setTimeout(function() {
+                downloadButton.innerHTML = originalText;
+                downloadButton.disabled = false;
+            }, 3000);
+        });
+    });
+</script>
+
 </body>
 </html>

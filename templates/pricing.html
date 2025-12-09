@@ -248,7 +248,7 @@
                         
                         <!-- Book Button -->
                         <div class="col-md-2 text-center">
-                            <a href=\"{{ url_for('search_flights') }}?departure_city={{ flight.source_airport }}&arrival_city={{ flight.dest_airport }}&departure_date={{ flight.departure_time.split(' ')[0] }}\"
+                            <a href="{{ url_for('search_flights') }}?departure_city={{ flight.source_airport }}&arrival_city={{ flight.dest_airport }}&departure_date={{ flight.departure_time.split(' ')[0] }}"
                                class="btn btn-success btn-book">
                                 <i class="fas fa-ticket-alt me-2"></i>Book Now
                             </a>

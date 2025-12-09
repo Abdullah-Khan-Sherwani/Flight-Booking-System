@@ -608,6 +608,7 @@ def search_flights_get():
         travel_class_name = class_names.get(travel_class, travel_class)
 
         # Get flights using View_Flight_Availability for efficient seat availability
+        # Also get prices for all classes (ECO, BUS, FIR)
         query = """
             SELECT fi.Instance_ID,
                    fr.Source_Airport,
@@ -619,7 +620,22 @@ def search_flights_get():
                    a2.Airport_Name AS Dest_Airport_Name,
                    c1.City_Name AS Source_City,
                    c2.City_Name AS Dest_City,
-                   vfa.Seats_Remaining
+                   vfa.Seats_Remaining,
+                   -- Economy Price
+                   (SELECT Base_Price FROM Route_Pricing 
+                    WHERE Route_ID = fr.Route_ID AND Class_ID = 'ECO'
+                    AND SYSDATE BETWEEN Valid_From AND Valid_To
+                    AND ROWNUM = 1) as Eco_Price,
+                   -- Business Price
+                   (SELECT Base_Price FROM Route_Pricing 
+                    WHERE Route_ID = fr.Route_ID AND Class_ID = 'BUS'
+                    AND SYSDATE BETWEEN Valid_From AND Valid_To
+                    AND ROWNUM = 1) as Bus_Price,
+                   -- First Class Price
+                   (SELECT Base_Price FROM Route_Pricing 
+                    WHERE Route_ID = fr.Route_ID AND Class_ID = 'FIR'
+                    AND SYSDATE BETWEEN Valid_From AND Valid_To
+                    AND ROWNUM = 1) as First_Price
             FROM Flight_Instance fi
             JOIN Flight_Route fr ON fi.Route_ID = fr.Route_ID
             JOIN Airport a1 ON fr.Source_Airport = a1.Airport_ID
@@ -709,6 +725,7 @@ def search_flights():
         travel_class_name = class_names.get(travel_class, travel_class)
 
         # Get flights using View_Flight_Availability for efficient seat availability
+        # Also get prices for all classes (ECO, BUS, FIR)
         query = """
             SELECT fi.Instance_ID,
                    fr.Source_Airport,
@@ -720,7 +737,22 @@ def search_flights():
                    a2.Airport_Name AS Dest_Airport_Name,
                    c1.City_Name AS Source_City,
                    c2.City_Name AS Dest_City,
-                   vfa.Seats_Remaining
+                   vfa.Seats_Remaining,
+                   -- Economy Price
+                   (SELECT Base_Price FROM Route_Pricing 
+                    WHERE Route_ID = fr.Route_ID AND Class_ID = 'ECO'
+                    AND SYSDATE BETWEEN Valid_From AND Valid_To
+                    AND ROWNUM = 1) as Eco_Price,
+                   -- Business Price
+                   (SELECT Base_Price FROM Route_Pricing 
+                    WHERE Route_ID = fr.Route_ID AND Class_ID = 'BUS'
+                    AND SYSDATE BETWEEN Valid_From AND Valid_To
+                    AND ROWNUM = 1) as Bus_Price,
+                   -- First Class Price
+                   (SELECT Base_Price FROM Route_Pricing 
+                    WHERE Route_ID = fr.Route_ID AND Class_ID = 'FIR'
+                    AND SYSDATE BETWEEN Valid_From AND Valid_To
+                    AND ROWNUM = 1) as First_Price
             FROM Flight_Instance fi
             JOIN Flight_Route fr ON fi.Route_ID = fr.Route_ID
             JOIN Airport a1 ON fr.Source_Airport = a1.Airport_ID
@@ -3224,12 +3256,20 @@ def search_reschedule_flights():
     # This route uses the same logic as search_flights but stores reschedule context
     reservation_id = request.form.get('reservation_id')
     original_booking_id = request.form.get('original_booking_id')
+    travel_class = request.form.get('travel_class', 'ECO')
     
     # Store reschedule context in session
     session['reschedule_context'] = {
         'reservation_id': reservation_id,
         'original_booking_id': original_booking_id
     }
+    
+    # IMPORTANT: Update the reschedule_travel_class with the new class selection
+    # This ensures the new class is carried forward to seat selection
+    session['reschedule_travel_class'] = travel_class
+    session['search_travel_class'] = travel_class  # Also update search travel class
+    
+    print(f"DEBUG - Reschedule search with travel_class: {travel_class}")
     
     # Use the existing search_flights logic but with reschedule context
     return search_flights()

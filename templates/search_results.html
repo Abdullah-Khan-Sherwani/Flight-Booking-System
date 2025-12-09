@@ -43,21 +43,47 @@
             {% for flight in flights %}
             <div class="flight-card">
                 <div class="row">
-                    <div class="col-md-8">
+                    <div class="col-md-5">
                         <h5>Flight {{ flight[0] }}</h5>  <!-- Flight_ID -->
                         <p class="mb-1">
                             <strong>Departure:</strong> 
-                            {{ flight[6] }} at {{ flight[3] }}  <!-- Source_City and Departure_Date_Time -->
+                            {{ flight[8] }} at {{ flight[3] }}  <!-- Source_City and Departure_Date_Time -->
                         </p>
                         <p class="mb-1">
                             <strong>Arrival:</strong> 
-                            {{ flight[7] }} at {{ flight[4] }}  <!-- Dest_City and Arrival_Date_Time -->
+                            {{ flight[9] }} at {{ flight[4] }}  <!-- Dest_City and Arrival_Date_Time -->
                         </p>
                         <p class="mb-0">
-                            <strong>Aircraft:</strong> {{ flight[5] }}  <!-- Airplane_Type -->
+                            <strong>Aircraft:</strong> {{ flight[5] }}  <!-- Model_ID -->
+                        </p>
+                        <p class="mb-0 text-muted">
+                            <small><strong>Seats Available:</strong> {{ flight[10] }}</small>
                         </p>
                     </div>
-                    <div class="col-md-4 text-end">
+                    <div class="col-md-4">
+                        <!-- Pricing for all classes -->
+                        <div class="row text-center">
+                            <div class="col-4">
+                                <div class="p-2 {% if search_criteria.travel_class == 'Economy' %}bg-primary text-white rounded{% endif %}">
+                                    <small class="d-block text-muted {% if search_criteria.travel_class == 'Economy' %}text-white{% endif %}">Economy</small>
+                                    <strong>Rs.{{ "%.2f"|format(flight[11]) if flight[11] else 'N/A' }}</strong>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="p-2 {% if search_criteria.travel_class == 'Business' %}bg-primary text-white rounded{% endif %}">
+                                    <small class="d-block text-muted {% if search_criteria.travel_class == 'Business' %}text-white{% endif %}">Business</small>
+                                    <strong>Rs.{{ "%.2f"|format(flight[12]) if flight[12] else 'N/A' }}</strong>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="p-2 {% if search_criteria.travel_class == 'First Class' %}bg-primary text-white rounded{% endif %}">
+                                    <small class="d-block text-muted {% if search_criteria.travel_class == 'First Class' %}text-white{% endif %}">First</small>
+                                    <strong>Rs.{{ "%.2f"|format(flight[13]) if flight[13] else 'N/A' }}</strong>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 text-end d-flex align-items-center justify-content-end">
                         <!-- FIXED: Pass the correct travel class code -->
                         <a href="{{ url_for('select_flight', flight_id=flight[0]) }}?trip_type={{ search_criteria.trip_type }}&passengers={{ search_criteria.passengers }}&travel_class={% if search_criteria.travel_class == 'Economy' %}ECO{% elif search_criteria.travel_class == 'Business' %}BUS{% elif search_criteria.travel_class == 'First Class' %}FIR{% else %}ECO{% endif %}" 
                            class="btn btn-primary btn-lg">
