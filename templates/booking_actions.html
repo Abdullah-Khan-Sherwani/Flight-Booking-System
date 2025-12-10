@@ -52,53 +52,67 @@
             
             <h4 class="mb-3">Select Flights to {{ "Cancel" if action_type == "cancel" else "Reschedule" }}:</h4>
             
+            {% set ns = namespace(flights={}) %}
             {% for reservation in reservations %}
+                {% if reservation.instance_id not in ns.flights %}
+                    {% set _ = ns.flights.update({reservation.instance_id: []}) %}
+                {% endif %}
+                {% set _ = ns.flights[reservation.instance_id].append(reservation) %}
+            {% endfor %}
+            
+            {% for flight_id, flight_reservations in ns.flights.items() %}
             <div class="flight-card">
                 <div class="form-check">
                     <input class="form-check-input reservation-checkbox" type="checkbox" 
                            name="selected_reservations" 
-                           value="{{ reservation.reservation_id }}" 
-                           id="res{{ loop.index }}"
-                           data-passenger="{{ reservation.passenger_name }}"
-                           data-flight="{{ reservation.instance_id }}"
-                           data-seat="{{ reservation.seat_number }}">
-                    <label class="form-check-label w-100" for="res{{ loop.index }}">
+                           value="{{ flight_reservations|map(attribute='reservation_id')|join(',') }}" 
+                           id="flight{{ loop.index }}"
+                           data-flight="{{ flight_id }}"
+                           data-passengers="{{ flight_reservations|map(attribute='passenger_name')|join(', ') }}">
+                    <label class="form-check-label w-100" for="flight{{ loop.index }}">
                         <div class="row">
                             <div class="col-md-8">
-                                <h5>Flight {{ reservation.instance_id }}</h5>
+                                <h5>Flight {{ flight_id }}</h5>
                                 <p class="mb-1">
-                                    <strong>Passenger:</strong> {{ reservation.passenger_name }}
-                                    {% if reservation.title %}
-                                    <span class="passenger-badge">{{ reservation.title }}</span>
-                                    {% endif %}
+                                    <strong>Route:</strong> {{ flight_reservations[0].departure_city }} ({{ flight_reservations[0].departure_airport }}) → {{ flight_reservations[0].arrival_city }} ({{ flight_reservations[0].arrival_airport }})
                                 </p>
                                 <p class="mb-1">
-                                    <strong>Route:</strong> {{ reservation.departure_city }} ({{ reservation.departure_airport }}) → {{ reservation.arrival_city }} ({{ reservation.arrival_airport }})
+                                    <strong>Departure:</strong> {{ flight_reservations[0].departure_time }}
                                 </p>
                                 <p class="mb-1">
-                                    <strong>Departure:</strong> {{ reservation.departure_time }}
+                                    <strong>Arrival:</strong> {{ flight_reservations[0].arrival_time }}
                                 </p>
-                                <p class="mb-1">
-                                    <strong>Arrival:</strong> {{ reservation.arrival_time }}
-                                </p>
-                                <p class="mb-0">
-                                    <strong>Seat:</strong> {{ reservation.seat_number }} 
-                                    <span class="badge bg-{{ 'success' if reservation.travel_class == 'ECO' else 'warning' if reservation.travel_class == 'BUS' else 'danger' }}">
-                                        {% if reservation.travel_class == 'ECO' %}Economy
-                                        {% elif reservation.travel_class == 'BUS' %}Business
-                                        {% elif reservation.travel_class == 'FIR' %}First Class
-                                        {% else %}{{ reservation.travel_class }}
-                                        {% endif %}
-                                    </span>
-                                    - Rs. {{ "%.2f"|format(reservation.seat_cost) }}
-                                </p>
+                                <div class="mt-2 pt-2 border-top">
+                                    <strong>Passengers on this flight:</strong>
+                                    <ul class="mb-0 mt-1">
+                                        {% for res in flight_reservations %}
+                                        <li>
+                                            {{ res.passenger_name }}
+                                            {% if res.title %}
+                                            <span class="passenger-badge">{{ res.title }}</span>
+                                            {% endif %}
+                                            - Seat: {{ res.seat_number }}
+                                            <span class="badge bg-{{ 'success' if res.travel_class == 'ECO' else 'warning' if res.travel_class == 'BUS' else 'danger' }}">
+                                                {% if res.travel_class == 'ECO' %}Economy
+                                                {% elif res.travel_class == 'BUS' %}Business
+                                                {% elif res.travel_class == 'FIR' %}First Class
+                                                {% else %}{{ res.travel_class }}
+                                                {% endif %}
+                                            </span>
+                                            (Rs. {{ "%.2f"|format(res.seat_cost) }})
+                                        </li>
+                                        {% endfor %}
+                                    </ul>
+                                </div>
                             </div>
                             <div class="col-md-4">
-                                <p class="mb-1"><strong>Reservation ID:</strong> {{ reservation.reservation_id }}</p>
-                                <p class="mb-0"><strong>Class:</strong> 
-                                    <span class="badge bg-{{ 'success' if reservation.travel_class == 'ECO' else 'warning' if reservation.travel_class == 'BUS' else 'danger' }}">
-                                        {{ reservation.travel_class }}
-                                    </span>
+                                <p class="mb-1"><strong>Total Passengers:</strong> {{ flight_reservations|length }}</p>
+                                <p class="mb-1"><strong>Total Cost:</strong> Rs. {{ "%.2f"|format(flight_reservations|sum(attribute='seat_cost')) }}</p>
+                                <p class="mb-0 text-muted small">
+                                    <strong>Reservation IDs:</strong><br>
+                                    {% for res in flight_reservations %}
+                                    {{ res.reservation_id }}<br>
+                                    {% endfor %}
                                 </p>
                             </div>
                         </div>
@@ -217,9 +231,9 @@
                     const li = document.createElement('li');
                     li.className = 'list-group-item';
                     li.innerHTML = `
-                        <strong>${checkbox.dataset.passenger}</strong><br>
+                        <strong>Flight ${checkbox.dataset.flight}</strong><br>
                         <small class="text-muted">
-                            Flight: ${checkbox.dataset.flight} | Seat: ${checkbox.dataset.seat}
+                            Passengers: ${checkbox.dataset.passengers}
                         </small>
                     `;
                     selectedList.appendChild(li);

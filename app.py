@@ -2666,6 +2666,7 @@ def download_tickets(booking_id):
         print(f"DEBUG - Original departure for booking {booking_id}: {original_departure}")
         
         # Get booking and passenger details - SEPARATE OUTBOUND AND RETURN
+        # Use LEFT JOIN for Aircraft_Row_Class to include infants (who have NULL seats)
         cursor.execute("""
             SELECT 
                 b.Booking_ID, 
@@ -2682,7 +2683,8 @@ def download_tickets(booking_id):
                 CASE 
                     WHEN fr.Source_Airport = :original_departure THEN 'OUTBOUND'
                     ELSE 'RETURN'
-                END as Flight_Type
+                END as Flight_Type,
+                r.Passenger_Type
             FROM Booking b
             JOIN Reservation r ON b.Booking_ID = r.Booking_ID
             JOIN Passenger p ON r.Passenger_ID = p.Passenger_ID
@@ -2694,9 +2696,9 @@ def download_tickets(booking_id):
             JOIN Zip_Master zm2 ON a2.Zipcode = zm2.Zipcode
             JOIN City c1 ON zm1.City_ID = c1.City_ID
             JOIN City c2 ON zm2.City_ID = c2.City_ID
-            JOIN Aircraft_Row_Class arc ON fi.Model_ID = arc.Model_ID AND r.Row_Number = arc.Row_Number
+            LEFT JOIN Aircraft_Row_Class arc ON fi.Model_ID = arc.Model_ID AND r.Row_Number = arc.Row_Number
             WHERE b.Booking_ID = :booking_id
-            ORDER BY fi.Departure_Time, p.Last_Name
+            ORDER BY fi.Departure_Time, r.Passenger_Type DESC, p.Last_Name
         """, booking_id=booking_id, original_departure=original_departure)
         
         booking_data = cursor.fetchall()
@@ -2709,6 +2711,14 @@ def download_tickets(booking_id):
         return_data = []
         
         for row in booking_data:
+            # Handle infant case (NULL seat)
+            if row[6] is None or row[7] is None:
+                seat_number = "Lap Infant"
+                travel_class = "N/A"
+            else:
+                seat_number = f"{row[6]}{row[7]}"
+                travel_class = row[17] if row[17] else "ECO"
+            
             reservation = {
                 'booking_id': row[0],
                 'passenger_id': row[1],
@@ -2727,11 +2737,12 @@ def download_tickets(booking_id):
                 'arrival_airport': row[14],
                 'departure_city': row[15],
                 'arrival_city': row[16],
-                'travel_class': row[17],
+                'travel_class': travel_class,
                 'source_airport': row[18],
                 'dest_airport': row[19],
                 'flight_type': row[20],  # This tells us if it's OUTBOUND or RETURN
-                'seat_number': f"{row[6]}{row[7]}",
+                'passenger_type': row[21],
+                'seat_number': seat_number,
                 'flight_date': row[11].split(' ')[0] if row[11] else 'N/A'
             }
             
@@ -2833,7 +2844,8 @@ def view_ticket(reservation_id):
                    TO_CHAR(fi.Arrival_Time, 'DD-MON-YYYY HH24:MI'),
                    a1.Airport_Name, a2.Airport_Name,
                    c1.City_Name, c2.City_Name,
-                   arc.Class_ID
+                   arc.Class_ID,
+                   r.Passenger_Type
             FROM Reservation r
             JOIN Passenger p ON r.Passenger_ID = p.Passenger_ID
             JOIN Flight_Instance fi ON r.Instance_ID = fi.Instance_ID
@@ -2844,7 +2856,7 @@ def view_ticket(reservation_id):
             JOIN Zip_Master zm2 ON a2.Zipcode = zm2.Zipcode
             JOIN City c1 ON zm1.City_ID = c1.City_ID
             JOIN City c2 ON zm2.City_ID = c2.City_ID
-            JOIN Aircraft_Row_Class arc ON fi.Model_ID = arc.Model_ID AND r.Row_Number = arc.Row_Number
+            LEFT JOIN Aircraft_Row_Class arc ON fi.Model_ID = arc.Model_ID AND r.Row_Number = arc.Row_Number
             WHERE r.Reservation_ID = :reservation_id
         """, reservation_id=reservation_id)
         
@@ -2852,6 +2864,14 @@ def view_ticket(reservation_id):
         
         if not ticket_data:
             return render_template('error.html', error="Ticket not found")
+        
+        # Handle infant case (NULL seat)
+        if ticket_data[3] is None or ticket_data[4] is None:
+            seat_number = "Lap Infant (No Seat)"
+            travel_class = "N/A"
+        else:
+            seat_number = f"{ticket_data[3]}{ticket_data[4]}"
+            travel_class = ticket_data[17] if ticket_data[17] else "ECO"
         
         # Prepare data for ticket template
         context = {
@@ -2863,7 +2883,7 @@ def view_ticket(reservation_id):
             'seat_cost': float(ticket_data[5]),
             'passenger_name': f"{ticket_data[6]} {ticket_data[7]}",
             'title': ticket_data[8],
-            'seat_number': f"{ticket_data[3]}{ticket_data[4]}",
+            'seat_number': seat_number,
             'flight_number': ticket_data[9],
             'aircraft_type': ticket_data[10],
             'departure_time': ticket_data[11],
@@ -2935,13 +2955,15 @@ def verify_booking():
             return render_template('error.html', error="Booking not found or contact information doesn't match")
         
         # Get all ACTIVE reservations for this booking (exclude cancelled ones)
+        # Use LEFT JOIN for Aircraft_Row_Class to include infants (who have NULL seats)
         cursor.execute("""
             SELECT r.Reservation_ID, r.Passenger_ID, r.Instance_ID, r.Row_Number, r.Seat_Letter, r.Price_Charged,
                    p.First_Name, p.Last_Name, p.Title,
                    fi.Departure_Time, fi.Arrival_Time,
                    a1.Airport_Name as Departure_Airport, a2.Airport_Name as Arrival_Airport,
                    c1.City_Name as Departure_City, c2.City_Name as Arrival_City,
-                   arc.Class_ID as Travel_Class
+                   arc.Class_ID as Travel_Class,
+                   r.Passenger_Type
             FROM Reservation r
             JOIN Passenger p ON r.Passenger_ID = p.Passenger_ID
             JOIN Flight_Instance fi ON r.Instance_ID = fi.Instance_ID
@@ -2952,10 +2974,10 @@ def verify_booking():
             JOIN Zip_Master zm2 ON a2.Zipcode = zm2.Zipcode
             JOIN City c1 ON zm1.City_ID = c1.City_ID
             JOIN City c2 ON zm2.City_ID = c2.City_ID
-            JOIN Aircraft_Row_Class arc ON fi.Model_ID = arc.Model_ID AND r.Row_Number = arc.Row_Number
+            LEFT JOIN Aircraft_Row_Class arc ON fi.Model_ID = arc.Model_ID AND r.Row_Number = arc.Row_Number
             WHERE r.Booking_ID = :booking_id
             AND r.Ticket_Status != 'CANCELLED'
-            ORDER BY fi.Departure_Time
+            ORDER BY fi.Departure_Time, r.Passenger_Type DESC
         """, booking_id=booking_id)
         
         reservations = cursor.fetchall()
@@ -2963,6 +2985,14 @@ def verify_booking():
         # Convert to list of dictionaries for easier template handling
         reservation_list = []
         for res in reservations:
+            # Handle infant case (NULL seat)
+            if res[3] is None or res[4] is None:
+                seat_number = "Lap Infant (No Seat)"
+                travel_class = "N/A"
+            else:
+                seat_number = f"{res[3]}{res[4]}"
+                travel_class = res[15] if res[15] else "ECO"
+            
             reservation_list.append({
                 'reservation_id': res[0],
                 'passenger_id': res[1],
@@ -2978,8 +3008,9 @@ def verify_booking():
                 'arrival_airport': res[12],
                 'departure_city': res[13],
                 'arrival_city': res[14],
-                'travel_class': res[15],
-                'seat_number': f"{res[3]}{res[4]}"
+                'travel_class': travel_class,
+                'seat_number': seat_number,
+                'passenger_type': res[16]
             })
         
         booking_info = {
@@ -3159,11 +3190,11 @@ def redirect_to_reschedule(reservation_id):
             JOIN Zip_Master zm2 ON a2.Zipcode = zm2.Zipcode
             JOIN City c1 ON zm1.City_ID = c1.City_ID
             JOIN City c2 ON zm2.City_ID = c2.City_ID
-            JOIN Aircraft_Row_Class arc ON fi.Model_ID = arc.Model_ID AND r.Row_Number = arc.Row_Number
+            LEFT JOIN Aircraft_Row_Class arc ON fi.Model_ID = arc.Model_ID AND r.Row_Number = arc.Row_Number
             WHERE r.Booking_ID = :booking_id
             AND r.Instance_ID = :instance_id
             AND r.Ticket_Status != 'CANCELLED'
-            ORDER BY r.Reservation_ID
+            ORDER BY r.Passenger_Type DESC, r.Reservation_ID
         """, booking_id=booking_id, instance_id=instance_id)
         
         all_reservations = cursor.fetchall()
@@ -3349,7 +3380,8 @@ def booking_actions():
                    fi.Departure_Time, fi.Arrival_Time,
                    a1.Airport_Name as Departure_Airport, a2.Airport_Name as Arrival_Airport,
                    c1.City_Name as Departure_City, c2.City_Name as Arrival_City,
-                   arc.Class_ID as Travel_Class
+                   arc.Class_ID as Travel_Class,
+                   r.Passenger_Type
             FROM Reservation r
             JOIN Passenger p ON r.Passenger_ID = p.Passenger_ID
             JOIN Flight_Instance fi ON r.Instance_ID = fi.Instance_ID
@@ -3360,10 +3392,10 @@ def booking_actions():
             JOIN Zip_Master zm2 ON a2.Zipcode = zm2.Zipcode
             JOIN City c1 ON zm1.City_ID = c1.City_ID
             JOIN City c2 ON zm2.City_ID = c2.City_ID
-            JOIN Aircraft_Row_Class arc ON fi.Model_ID = arc.Model_ID AND r.Row_Number = arc.Row_Number
+            LEFT JOIN Aircraft_Row_Class arc ON fi.Model_ID = arc.Model_ID AND r.Row_Number = arc.Row_Number
             WHERE r.Booking_ID = :booking_id
             AND r.Ticket_Status != 'CANCELLED'
-            ORDER BY fi.Departure_Time
+            ORDER BY fi.Departure_Time, r.Passenger_Type DESC
         """, booking_id=booking_id)
         
         reservations = cursor.fetchall()
@@ -3371,6 +3403,14 @@ def booking_actions():
         # Convert to list of dictionaries for easier template handling
         reservation_list = []
         for res in reservations:
+            # Handle infant case (NULL seat)
+            if res[3] is None or res[4] is None:
+                seat_number = "Lap Infant (No Seat)"
+                travel_class = "N/A"
+            else:
+                seat_number = f"{res[3]}{res[4]}"
+                travel_class = res[15] if res[15] else "ECO"
+            
             reservation_list.append({
                 'reservation_id': res[0],
                 'passenger_id': res[1],
@@ -3386,8 +3426,9 @@ def booking_actions():
                 'arrival_airport': res[12],
                 'departure_city': res[13],
                 'arrival_city': res[14],
-                'travel_class': res[15],
-                'seat_number': f"{res[3]}{res[4]}"
+                'travel_class': travel_class,
+                'seat_number': seat_number,
+                'passenger_type': res[16]
             })
         
         booking_info = {
