@@ -64,6 +64,7 @@ def pricing():
                  WHERE asm.Model_ID = fi.Model_ID AND arc.Class_ID = 'ECO') - 
                 (SELECT COUNT(*) FROM Reservation r 
                  WHERE r.Instance_ID = fi.Instance_ID 
+                 AND r.Ticket_Status != 'CANCELLED'
                  AND EXISTS (SELECT 1 FROM Aircraft_Row_Class arc2 
                            WHERE arc2.Model_ID = fi.Model_ID 
                            AND arc2.Row_Number = r.Row_Number 
@@ -73,6 +74,7 @@ def pricing():
                  WHERE asm.Model_ID = fi.Model_ID AND arc.Class_ID = 'BUS') - 
                 (SELECT COUNT(*) FROM Reservation r 
                  WHERE r.Instance_ID = fi.Instance_ID 
+                 AND r.Ticket_Status != 'CANCELLED'
                  AND EXISTS (SELECT 1 FROM Aircraft_Row_Class arc2 
                            WHERE arc2.Model_ID = fi.Model_ID 
                            AND arc2.Row_Number = r.Row_Number 
@@ -82,6 +84,7 @@ def pricing():
                  WHERE asm.Model_ID = fi.Model_ID AND arc.Class_ID = 'FIR') - 
                 (SELECT COUNT(*) FROM Reservation r 
                  WHERE r.Instance_ID = fi.Instance_ID 
+                 AND r.Ticket_Status != 'CANCELLED'
                  AND EXISTS (SELECT 1 FROM Aircraft_Row_Class arc2 
                            WHERE arc2.Model_ID = fi.Model_ID 
                            AND arc2.Row_Number = r.Row_Number 
@@ -224,7 +227,7 @@ def search_flights_get():
                    c1.City_Name AS Source_City,
                    c2.City_Name AS Dest_City,
                    (SELECT COUNT(*) FROM Aircraft_Seat_Map WHERE Model_ID = fi.Model_ID) - 
-                   (SELECT COUNT(*) FROM Reservation WHERE Instance_ID = fi.Instance_ID AND Row_Number IS NOT NULL) as Seats_Remaining
+                   (SELECT COUNT(*) FROM Reservation WHERE Instance_ID = fi.Instance_ID AND Row_Number IS NOT NULL AND Ticket_Status != 'CANCELLED') as Seats_Remaining
             FROM Flight_Instance fi
             JOIN Flight_Route fr ON fi.Route_ID = fr.Route_ID
             JOIN Airport a1 ON fr.Source_Airport = a1.Airport_ID
@@ -320,7 +323,7 @@ def search_flights():
                    c1.City_Name AS Source_City,
                    c2.City_Name AS Dest_City,
                    (SELECT COUNT(*) FROM Aircraft_Seat_Map WHERE Model_ID = fi.Model_ID) - 
-                   (SELECT COUNT(*) FROM Reservation WHERE Instance_ID = fi.Instance_ID AND Row_Number IS NOT NULL) as Seats_Remaining
+                   (SELECT COUNT(*) FROM Reservation WHERE Instance_ID = fi.Instance_ID AND Row_Number IS NOT NULL AND Ticket_Status != 'CANCELLED') as Seats_Remaining
             FROM Flight_Instance fi
             JOIN Flight_Route fr ON fi.Route_ID = fr.Route_ID
             JOIN Airport a1 ON fr.Source_Airport = a1.Airport_ID
@@ -427,7 +430,7 @@ def return_flight_search():
                        c1.City_Name AS Source_City,
                        c2.City_Name AS Dest_City,
                        (SELECT COUNT(*) FROM Aircraft_Seat_Map WHERE Model_ID = fi.Model_ID) - 
-                       (SELECT COUNT(*) FROM Reservation WHERE Instance_ID = fi.Instance_ID AND Row_Number IS NOT NULL) as Seats_Remaining
+                       (SELECT COUNT(*) FROM Reservation WHERE Instance_ID = fi.Instance_ID AND Row_Number IS NOT NULL AND Ticket_Status != 'CANCELLED') as Seats_Remaining
                 FROM Flight_Instance fi
                 JOIN Flight_Route fr ON fi.Route_ID = fr.Route_ID
                 JOIN Airport a1 ON fr.Source_Airport = a1.Airport_ID
@@ -486,6 +489,7 @@ def get_seat_status(flight_id):
                 AND asm.Row_Number = r.Row_Number 
                 AND asm.Seat_Letter = r.Seat_Letter
                 AND r.Instance_ID = :flight_id
+                AND r.Ticket_Status != 'CANCELLED'
             WHERE fi.Instance_ID = :flight_id
             ORDER BY asm.Row_Number, asm.Seat_Letter
         """, flight_id=flight_id)

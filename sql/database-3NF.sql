@@ -863,15 +863,16 @@ BEGIN
     -- 4. Update reservation - this triggers TRG_Auto_Cancel_Booking
     --    which handles booking status and logging automatically
     --    
-    --    IMPORTANT: Do NOT set Row_Number and Seat_Letter to NULL on cancellation!
-    --    The UQ_Seat_Instance constraint is on (Instance_ID, Row_Number, Seat_Letter).
-    --    If multiple reservations on the same flight are cancelled, setting both to NULL
-    --    would create duplicate (Instance_ID, NULL, NULL) entries, violating the constraint.
+    --    SEAT RELEASE: Set Row_Number and Seat_Letter to NULL on cancellation.
+    --    This releases the seat so it can be booked again.
     --    
-    --    Instead, keep the seat data but mark status as CANCELLED.
-    --    Queries checking seat availability should filter WHERE Ticket_Status != 'CANCELLED'.
+    --    Oracle's unique constraint (UQ_Seat_Instance) ignores rows with NULL values,
+    --    so multiple cancelled reservations with NULL seats won't conflict.
+    --    The seat becomes immediately available for new bookings.
     UPDATE Reservation
-    SET Ticket_Status = 'CANCELLED'
+    SET Ticket_Status = 'CANCELLED',
+        Row_Number = NULL,
+        Seat_Letter = NULL
     WHERE Reservation_ID = p_Reservation_ID;
     
     -- 5. Success - caller controls commit/rollback

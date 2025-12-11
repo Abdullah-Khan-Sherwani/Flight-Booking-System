@@ -993,6 +993,7 @@ def seat_selection():
                 AND asm.Row_Number = r.Row_Number 
                 AND asm.Seat_Letter = r.Seat_Letter
                 AND r.Instance_ID = :flight_id
+                AND r.Ticket_Status != 'CANCELLED'
             WHERE asm.Model_ID = :model_id
             AND arc.Class_ID = :travel_class
             ORDER BY asm.Row_Number, asm.Seat_Letter
@@ -1005,6 +1006,7 @@ def seat_selection():
             SELECT r.Row_Number, r.Seat_Letter
             FROM Reservation r
             WHERE r.Instance_ID = :flight_id
+            AND r.Ticket_Status != 'CANCELLED'
             AND r.Booking_ID != COALESCE(:reschedule_booking_id, '0')  -- Exclude the booking being rescheduled
         """, flight_id=flight_id, reschedule_booking_id=session.get('reschedule_original_booking'))
 
@@ -1024,6 +1026,7 @@ def seat_selection():
                     AND asm.Row_Number = r.Row_Number 
                     AND asm.Seat_Letter = r.Seat_Letter
                     AND r.Instance_ID = :flight_id
+                    AND r.Ticket_Status != 'CANCELLED'
                 WHERE asm.Model_ID = :model_id
                 AND arc.Class_ID = :travel_class
                 ORDER BY asm.Row_Number, asm.Seat_Letter
@@ -1036,6 +1039,7 @@ def seat_selection():
                 SELECT r.Row_Number, r.Seat_Letter
                 FROM Reservation r
                 WHERE r.Instance_ID = :flight_id
+                AND r.Ticket_Status != 'CANCELLED'
             """, flight_id=return_flight_id)
             
             booked_return_seats = [f"{row[0]}{row[1]}" for row in cursor.fetchall()]
@@ -1087,6 +1091,7 @@ def get_seat_status(flight_id):
                 AND asm.Row_Number = r.Row_Number 
                 AND asm.Seat_Letter = r.Seat_Letter
                 AND r.Instance_ID = :flight_id
+                AND r.Ticket_Status != 'CANCELLED'
             WHERE fi.Instance_ID = :flight_id
             ORDER BY asm.Row_Number, asm.Seat_Letter
         """, flight_id=flight_id)
